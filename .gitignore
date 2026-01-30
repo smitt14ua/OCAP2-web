@@ -2,11 +2,13 @@
 .idea
 
 # builds
-ocap-webserver.exe
-ocap-webserver
+/ocap-webserver.exe
+/ocap-webserver
 
 # data
 data.db
+data/
+maps/
 static/data
 static/images/maps
 

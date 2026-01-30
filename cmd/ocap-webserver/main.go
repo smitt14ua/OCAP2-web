@@ -13,9 +13,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/OCAP2/web/server"
-	"github.com/OCAP2/web/server/conversion"
-	"github.com/OCAP2/web/server/storage"
+	"github.com/OCAP2/web/internal/server"
+	"github.com/OCAP2/web/internal/conversion"
+	"github.com/OCAP2/web/internal/storage"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
