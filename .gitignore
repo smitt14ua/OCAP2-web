@@ -1,5 +1,6 @@
 # IDE
 .idea
+.vscode
 
 # Build artifacts
 /ocap-webserver
@@ -9,6 +10,7 @@
 data.db
 data/
 maps/
+setting.json
 static/data
 static/images/maps
 
