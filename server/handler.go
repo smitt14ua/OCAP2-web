@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/OCAP2/web/server/storage"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
@@ -23,11 +24,34 @@ var (
 	BuildDate   string
 )
 
+// ConversionTrigger triggers async conversion of an operation
+type ConversionTrigger interface {
+	TriggerConversion(id int64, filename string)
+}
+
 type Handler struct {
-	repoOperation *RepoOperation
-	repoMarker    *RepoMarker
-	repoAmmo      *RepoAmmo
-	setting       Setting
+	repoOperation       *RepoOperation
+	repoMarker          *RepoMarker
+	repoAmmo            *RepoAmmo
+	setting             Setting
+	conversionTrigger   ConversionTrigger // optional, nil if conversion disabled
+}
+
+// FormatInfo contains storage format details for a recording
+type FormatInfo struct {
+	Format            string `json:"format"`
+	ChunkCount        int    `json:"chunkCount"`
+	SupportsStreaming bool   `json:"supportsStreaming"`
+}
+
+// HandlerOption configures the Handler
+type HandlerOption func(*Handler)
+
+// WithConversionTrigger sets the conversion trigger for event-driven conversion
+func WithConversionTrigger(trigger ConversionTrigger) HandlerOption {
+	return func(h *Handler) {
+		h.conversionTrigger = trigger
+	}
 }
 
 func NewHandler(
@@ -36,12 +60,23 @@ func NewHandler(
 	repoMarker *RepoMarker,
 	repoAmmo *RepoAmmo,
 	setting Setting,
+	opts ...HandlerOption,
 ) {
+	// Register storage engines
+	storage.RegisterEngine(storage.NewJSONEngine(setting.Data))
+	storage.RegisterEngine(storage.NewProtobufEngine(setting.Data))
+	storage.RegisterEngine(storage.NewFlatBuffersEngine(setting.Data))
+
 	hdlr := Handler{
 		repoOperation: repoOperation,
 		repoMarker:    repoMarker,
 		repoAmmo:      repoAmmo,
 		setting:       setting,
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(&hdlr)
 	}
 
 	e.Use(hdlr.errorHandler)
@@ -56,6 +91,19 @@ func NewHandler(
 	g.POST(
 		"/api/v1/operations/add",
 		hdlr.StoreOperation,
+	)
+	g.GET(
+		"/api/v1/operations/:id/format",
+		hdlr.GetOperationFormat,
+	)
+	g.GET(
+		"/api/v1/operations/:id/manifest",
+		hdlr.GetOperationManifest,
+	)
+	g.GET(
+		"/api/v1/operations/:id/chunk/:index",
+		hdlr.GetOperationChunk,
+		hdlr.cacheControl(CacheDuration),
 	)
 	g.GET(
 		"/api/v1/customize",
@@ -166,6 +214,125 @@ func (h *Handler) GetVersion(c echo.Context) error {
 	}, "\t")
 }
 
+func (h *Handler) GetOperationFormat(c echo.Context) error {
+	id := c.Param("id")
+
+	op, err := h.repoOperation.GetByID(c.Request().Context(), id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "operation not found")
+	}
+
+	// Get engine for this format
+	format := op.StorageFormat
+	if format == "" {
+		format = "json"
+	}
+
+	engine, err := storage.GetEngine(format)
+	if err != nil {
+		// Fallback to json if unknown format
+		engine, _ = storage.GetEngine("json")
+		format = "json"
+	}
+
+	chunkCount, _ := engine.ChunkCount(c.Request().Context(), op.Filename)
+
+	return c.JSON(http.StatusOK, FormatInfo{
+		Format:            format,
+		ChunkCount:        chunkCount,
+		SupportsStreaming: engine.SupportsStreaming(),
+	})
+}
+
+func (h *Handler) GetOperationManifest(c echo.Context) error {
+	id := c.Param("id")
+
+	op, err := h.repoOperation.GetByID(c.Request().Context(), id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "operation not found")
+	}
+
+	// Get engine for this format
+	format := op.StorageFormat
+	if format == "" {
+		format = "json"
+	}
+
+	engine, err := storage.GetEngine(format)
+	if err != nil {
+		// Fallback to json if unknown format
+		engine, _ = storage.GetEngine("json")
+		format = "json"
+	}
+
+	// For binary formats (protobuf, flatbuffers), stream raw file
+	if format == "protobuf" || format == "flatbuffers" {
+		reader, err := engine.GetManifestReader(c.Request().Context(), op.Filename)
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "failed to load manifest")
+		}
+		defer reader.Close()
+
+		contentType := "application/x-protobuf"
+		if format == "flatbuffers" {
+			contentType = "application/x-flatbuffers"
+		}
+		return c.Stream(http.StatusOK, contentType, reader)
+	}
+
+	// For JSON format, return as JSON
+	manifest, err := engine.GetManifest(c.Request().Context(), op.Filename)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to load manifest")
+	}
+	return c.JSON(http.StatusOK, manifest)
+}
+
+func (h *Handler) GetOperationChunk(c echo.Context) error {
+	id := c.Param("id")
+	indexStr := c.Param("index")
+
+	// Parse chunk index
+	chunkIndex, err := strconv.Atoi(indexStr)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid chunk index")
+	}
+
+	// Get operation by ID
+	op, err := h.repoOperation.GetByID(c.Request().Context(), id)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "operation not found")
+	}
+
+	// Determine format (use "json" as fallback if StorageFormat is empty)
+	format := op.StorageFormat
+	if format == "" {
+		format = "json"
+	}
+
+	// Get engine for this format
+	engine, err := storage.GetEngine(format)
+	if err != nil {
+		// Fallback to json if unknown format
+		engine, _ = storage.GetEngine("json")
+	}
+
+	// Get chunk reader for streaming
+	reader, err := engine.GetChunkReader(c.Request().Context(), op.Filename, chunkIndex)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "chunk not found")
+	}
+	defer reader.Close()
+
+	// Set content type based on format
+	contentType := "application/x-protobuf"
+	if format == "flatbuffers" {
+		contentType = "application/x-flatbuffers"
+	}
+
+	return c.Stream(http.StatusOK, contentType, reader)
+}
+
 func (h *Handler) StoreOperation(c echo.Context) error {
 	var (
 		ctx    = c.Request().Context()
@@ -213,6 +380,11 @@ func (h *Handler) StoreOperation(c echo.Context) error {
 
 	if _, err = io.Copy(writer, file); err != nil {
 		return err
+	}
+
+	// Trigger conversion immediately if enabled (async, non-blocking)
+	if h.conversionTrigger != nil {
+		h.conversionTrigger.TriggerConversion(op.ID, op.Filename)
 	}
 
 	return c.NoContent(http.StatusOK)
