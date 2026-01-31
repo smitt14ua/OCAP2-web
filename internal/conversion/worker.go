@@ -15,6 +15,8 @@ import (
 // OperationRepo defines the repository interface needed by the worker
 type OperationRepo interface {
 	SelectPending(ctx context.Context, limit int) ([]Operation, error)
+	SelectByStatus(ctx context.Context, status string) ([]Operation, error)
+	ResetConversionStatus(ctx context.Context, fromStatus, toStatus string) (int64, error)
 	UpdateConversionStatus(ctx context.Context, id int64, status string) error
 	UpdateStorageFormat(ctx context.Context, id int64, format string) error
 	UpdateMissionDuration(ctx context.Context, id int64, duration float64) error
@@ -35,6 +37,7 @@ type Worker struct {
 	interval      time.Duration
 	batchSize     int
 	storageFormat string
+	retryFailed   bool
 }
 
 // Config holds worker configuration
@@ -44,6 +47,7 @@ type Config struct {
 	BatchSize     int
 	ChunkSize     uint32
 	StorageFormat string // "protobuf" or "flatbuffers"
+	RetryFailed   bool
 }
 
 // DefaultConfig returns default worker configuration
@@ -74,12 +78,50 @@ func NewWorker(repo OperationRepo, cfg Config) *Worker {
 		interval:      cfg.Interval,
 		batchSize:     cfg.BatchSize,
 		storageFormat: cfg.StorageFormat,
+		retryFailed:   cfg.RetryFailed,
+	}
+}
+
+// cleanupInterrupted resets interrupted conversions and removes partial output files.
+// This should be called once at startup before the background loop.
+func (w *Worker) cleanupInterrupted(ctx context.Context) {
+	// Always reset 'converting' status (these were interrupted by shutdown)
+	ops, err := w.repo.SelectByStatus(ctx, "converting")
+	if err != nil {
+		slog.Error("failed to select converting operations", "error", err)
+	} else {
+		for _, op := range ops {
+			// Remove partial output directory
+			outputPath := filepath.Join(w.dataDir, op.Filename)
+			if err := os.RemoveAll(outputPath); err != nil && !os.IsNotExist(err) {
+				slog.Warn("failed to remove partial conversion", "path", outputPath, "error", err)
+			} else if err == nil {
+				slog.Info("removed partial conversion", "path", outputPath)
+			}
+		}
+		if count, err := w.repo.ResetConversionStatus(ctx, "converting", "pending"); err != nil {
+			slog.Error("failed to reset converting status", "error", err)
+		} else if count > 0 {
+			slog.Info("reset interrupted conversions", "count", count)
+		}
+	}
+
+	// Optionally reset 'failed' status
+	if w.retryFailed {
+		if count, err := w.repo.ResetConversionStatus(ctx, "failed", "pending"); err != nil {
+			slog.Error("failed to reset failed status", "error", err)
+		} else if count > 0 {
+			slog.Info("reset failed conversions for retry", "count", count)
+		}
 	}
 }
 
 // Start begins the background conversion loop
 func (w *Worker) Start(ctx context.Context) {
 	slog.Info("conversion worker started", "interval", w.interval, "batch", w.batchSize)
+
+	// Clean up any interrupted conversions from previous run
+	w.cleanupInterrupted(ctx)
 
 	// Run immediately on start
 	w.processOnce(ctx)
