@@ -16,3 +16,6 @@ static/images/maps
 
 # Logs
 *.log
+
+# Plans
+docs/plan/
