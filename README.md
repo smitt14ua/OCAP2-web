@@ -130,6 +130,8 @@ data/
 
 ## Docker
 
+Docker images are available for `linux/amd64` and `linux/arm64` architectures.
+
 ### Environment Variables
 
 | Variable | Description | Default |
@@ -163,24 +165,31 @@ docker run --name ocap-web -d \
   ghcr.io/ocap2/web:latest
 ```
 
-## Build from source
+## Installation
 
-This Project is based on [Golang](https://golang.org/dl/)
+### Pre-built binaries
 
-### Windows
+Download the latest release from [GitHub Releases](https://github.com/OCAP2/web/releases):
+
+| Platform | Archive |
+|----------|---------|
+| Windows x64 | `ocap-webserver-windows-amd64.zip` |
+| Linux x64 | `ocap-webserver-linux-amd64.tar.gz` |
+| Linux ARM64 | `ocap-webserver-linux-arm64.tar.gz` |
+
+Each archive contains the binary and required assets (markers, ammo, static files).
+
+### Build from source
+
+Requires [Go 1.24+](https://golang.org/dl/)
 
 ```bash
-go build -o ocap-webserver.exe ./cmd
-```
+# Linux / macOS
+go build -o ocap-webserver ./cmd/ocap-webserver
 
-### Linux
+# Windows
+go build -o ocap-webserver.exe ./cmd/ocap-webserver
 
-```bash
-go build -o ocap-webserver ./cmd
-```
-
-### Docker
-
-```bash
+# Docker
 docker build -t ocap-webserver .
 ```
