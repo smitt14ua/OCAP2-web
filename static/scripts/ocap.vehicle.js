@@ -98,7 +98,7 @@ class Vehicle extends Entity {
 
 	setCrew(crew) {
 		let content = "";
-		if (ui.nicknameEnable) {
+		if (ui.nameDisplayMode !== "none") {
 			this._crew = crew;
 			// this._marker.getPopup().setContent(`Test`); // Very slow (no need to recalc layout), use ._content instead
 
@@ -146,14 +146,13 @@ class Vehicle extends Entity {
 
 		let str = "";
 		this._crew.forEach(function (unitId) {
-			//if (unitId != -1) {
 			let unit = entities.getById(unitId);
 
-			// Only include player names
-			// if (unit.isPlayer) {
-				str += (unit.getName().encodeHTMLEntities() + "<br/>");
-			// }
-			//};
+			// In "players" mode, only include player names
+			if (ui.nameDisplayMode === "players" && !unit.isPlayer) {
+				return; // skip AI crew members
+			}
+			str += (unit.getName().encodeHTMLEntities() + "<br/>");
 		});
 		return str;
 	}
