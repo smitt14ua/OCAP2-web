@@ -513,6 +513,44 @@ class UI {
 		this.modalFilter.style.display = "inherit";
 	};
 
+	/**
+	 * Returns status display info for an operation based on its storage format and conversion status.
+	 * @param {Object} op - Operation object with storageFormat and conversionStatus fields
+	 * @returns {{icon: string, textKey: string, tooltip: string}}
+	 */
+	getOperationStatusInfo (op) {
+		const format = op.storageFormat || 'json';
+		const conversionStatus = op.conversionStatus || 'completed';
+		const targetFormat = format === 'flatbuffers' ? 'FlatBuffers' : 'Protobuf';
+
+		if (conversionStatus === 'pending') {
+			// Queued for conversion
+			return {
+				icon: '⏳',
+				tooltip: 'Converting (JSON → ' + targetFormat + ')'
+			};
+		} else if (conversionStatus === 'converting') {
+			// Actively converting
+			return {
+				icon: '⚙️',
+				tooltip: 'Converting (JSON → ' + targetFormat + ')'
+			};
+		} else if (format === 'protobuf' || format === 'flatbuffers') {
+			// Binary format = streaming
+			const formatName = format === 'protobuf' ? 'Protobuf' : 'FlatBuffers';
+			return {
+				icon: '📡',
+				tooltip: 'Streaming (' + formatName + ')'
+			};
+		} else {
+			// JSON, completed (no conversion or conversion not enabled)
+			return {
+				icon: '📄',
+				tooltip: 'Static (JSON)'
+			};
+		}
+	}
+
 	setModalOpList () {
 		var OpList;
 		var n = filterTagGameInput.options.selectedIndex;
@@ -552,7 +590,7 @@ class UI {
 				var table = document.createElement("table");
 				var headerRow = document.createElement("tr");
 
-				var columnNames = ["mission", "map", "data", "durability", "tag"];
+				var columnNames = ["mission", "map", "data", "durability", "tag", "status"];
 				columnNames.forEach(function (name) {
 					var th = document.createElement("th");
 					localizable(th, name);
@@ -563,7 +601,6 @@ class UI {
 
 				OpList.forEach((op) => {
 					var row = document.createElement("tr");
-					var cell = document.createElement("td");
 
 					var vals = [
 						op.mission_name,
@@ -577,6 +614,13 @@ class UI {
 						cell.textContent = val;
 						row.appendChild(cell);
 					});
+
+					// Add status cell with icon and tooltip
+					var statusCell = document.createElement("td");
+					var statusInfo = this.getOperationStatusInfo(op);
+					statusCell.textContent = statusInfo.icon;
+					statusCell.title = statusInfo.tooltip;
+					row.appendChild(statusCell);
 
 					row.addEventListener("click", () => {
 						localizable(this.modalBody, "loading");
