@@ -86,7 +86,7 @@ func runConvert(args []string) error {
 		return showConversionStatus(ctx, repo)
 
 	case *inputFile != "":
-		return convertSingleFile(ctx, *inputFile, setting.Data, uint32(*chunkSize), *format)
+		return convertSingleFile(ctx, repo, *inputFile, setting.Data, uint32(*chunkSize), *format)
 
 	case *all:
 		return convertAll(ctx, repo, setting, uint32(*chunkSize), *format)
@@ -118,24 +118,41 @@ func showConversionStatus(ctx context.Context, repo *server.RepoOperation) error
 	return nil
 }
 
-func convertSingleFile(ctx context.Context, inputFile, dataDir string, chunkSize uint32, format string) error {
-	// Determine output path
+func convertSingleFile(ctx context.Context, repo *server.RepoOperation, inputFile, dataDir string, chunkSize uint32, format string) error {
+	// Determine filename - only strip .gz to match database filename format
 	baseName := filepath.Base(inputFile)
 	if ext := filepath.Ext(baseName); ext == ".gz" {
 		baseName = baseName[:len(baseName)-len(ext)]
 	}
-	if ext := filepath.Ext(baseName); ext == ".json" {
-		baseName = baseName[:len(baseName)-len(ext)]
-	}
-	outputPath := filepath.Join(dataDir, baseName)
 
-	log.Printf("Converting %s to %s (format: %s, chunk size: %d)", inputFile, outputPath, format, chunkSize)
-
-	// Register engines if not already done
+	// Register engines
 	storage.RegisterEngine(storage.NewProtobufEngine(dataDir))
 	storage.RegisterEngine(storage.NewFlatBuffersEngine(dataDir))
 
-	// Get the appropriate storage engine
+	// Check if operation exists in database - if so, use worker for consistent behavior
+	if op, err := repo.GetByFilename(ctx, baseName); err == nil && op != nil {
+		log.Printf("Converting operation %d: %s (format: %s)", op.ID, op.Filename, format)
+
+		// Use worker to ensure identical behavior as background conversion
+		worker := conversion.NewWorker(
+			&repoAdapter{repo},
+			conversion.Config{
+				DataDir:       dataDir,
+				ChunkSize:     chunkSize,
+				StorageFormat: format,
+			},
+		)
+		if err := worker.ConvertOne(ctx, op.ID, op.Filename); err != nil {
+			return err
+		}
+		log.Printf("Conversion complete: %s", op.Filename)
+		return nil
+	}
+
+	// Standalone conversion (no database entry)
+	outputPath := filepath.Join(dataDir, baseName)
+	log.Printf("Converting %s to %s (format: %s, chunk size: %d)", inputFile, outputPath, format, chunkSize)
+
 	engine, err := storage.GetEngine(format)
 	if err != nil {
 		return fmt.Errorf("unknown format %q: %w", format, err)
@@ -309,4 +326,8 @@ func (a *repoAdapter) UpdateStorageFormat(ctx context.Context, id int64, format 
 
 func (a *repoAdapter) UpdateMissionDuration(ctx context.Context, id int64, duration float64) error {
 	return a.repo.UpdateMissionDuration(ctx, id, duration)
+}
+
+func (a *repoAdapter) UpdateSchemaVersion(ctx context.Context, id int64, version uint32) error {
+	return a.repo.UpdateSchemaVersion(ctx, id, version)
 }

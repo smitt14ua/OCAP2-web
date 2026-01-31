@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/OCAP2/web/pkg/schemas/protobuf"
+	pbv1 "github.com/OCAP2/web/pkg/schemas/protobuf/v1"
 	"github.com/OCAP2/web/internal/storage"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
@@ -114,6 +114,7 @@ func TestGetOperationFormat(t *testing.T) {
 	assert.Equal(t, "json", formatInfo.Format)
 	assert.Equal(t, 1, formatInfo.ChunkCount)
 	assert.False(t, formatInfo.SupportsStreaming)
+	assert.Equal(t, uint32(1), formatInfo.SchemaVersion) // Defaults to 1 when not set
 
 	// Test: Get format for non-existing operation
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/operations/999/format", nil)
@@ -309,7 +310,7 @@ func TestGetOperationManifestProtobuf(t *testing.T) {
 	err = os.MkdirAll(missionDir, 0755)
 	assert.NoError(t, err)
 
-	pbManifest := &pb.Manifest{
+	pbManifest := &pbv1.Manifest{
 		Version:        1,
 		WorldName:      "altis",
 		MissionName:    "Test Mission Protobuf",
@@ -317,12 +318,12 @@ func TestGetOperationManifestProtobuf(t *testing.T) {
 		ChunkSize:      1000,
 		CaptureDelayMs: 1000,
 		ChunkCount:     1,
-		Entities: []*pb.EntityDef{
+		Entities: []*pbv1.EntityDef{
 			{
 				Id:         1,
-				Type:       pb.EntityType_ENTITY_TYPE_UNIT,
+				Type:       pbv1.EntityType_ENTITY_TYPE_UNIT,
 				Name:       "Player1",
-				Side:       pb.Side_SIDE_WEST,
+				Side:       pbv1.Side_SIDE_WEST,
 				GroupName:  "Alpha",
 				StartFrame: 0,
 				EndFrame:   100,
@@ -358,7 +359,7 @@ func TestGetOperationManifestProtobuf(t *testing.T) {
 	assert.Equal(t, "application/x-protobuf", rec.Header().Get("Content-Type"))
 
 	// Verify we can unmarshal the returned protobuf
-	var returnedManifest pb.Manifest
+	var returnedManifest pbv1.Manifest
 	err = proto.Unmarshal(rec.Body.Bytes(), &returnedManifest)
 	assert.NoError(t, err)
 	assert.Equal(t, "altis", returnedManifest.WorldName)
@@ -412,14 +413,14 @@ func TestGetOperationChunk(t *testing.T) {
 	err = os.MkdirAll(chunksDir, 0755)
 	assert.NoError(t, err)
 
-	pbChunk := &pb.Chunk{
+	pbChunk := &pbv1.Chunk{
 		Index:      0,
 		StartFrame: 0,
 		FrameCount: 10,
-		Frames: []*pb.Frame{
+		Frames: []*pbv1.Frame{
 			{
 				FrameNum: 0,
-				Entities: []*pb.EntityState{
+				Entities: []*pbv1.EntityState{
 					{
 						EntityId:  1,
 						PosX:      100.0,
@@ -437,7 +438,7 @@ func TestGetOperationChunk(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Also create manifest for ChunkCount
-	pbManifest := &pb.Manifest{
+	pbManifest := &pbv1.Manifest{
 		Version:        1,
 		WorldName:      "altis",
 		MissionName:    "Test Mission Protobuf",
@@ -474,7 +475,7 @@ func TestGetOperationChunk(t *testing.T) {
 	assert.Equal(t, "application/x-protobuf", rec.Header().Get("Content-Type"))
 
 	// Verify we can unmarshal the returned protobuf
-	var returnedChunk pb.Chunk
+	var returnedChunk pbv1.Chunk
 	err = proto.Unmarshal(rec.Body.Bytes(), &returnedChunk)
 	assert.NoError(t, err)
 	assert.Equal(t, uint32(0), returnedChunk.Index)
@@ -1923,4 +1924,55 @@ func TestGetCaptureFile_MissingFile(t *testing.T) {
 
 	err = hdlr.GetCaptureFile(c)
 	assert.Error(t, err)
+}
+
+func TestGetOperationFormat_WithSchemaVersion(t *testing.T) {
+	dir := t.TempDir()
+	pathDB := filepath.Join(dir, "test.db")
+	dataDir := filepath.Join(dir, "data")
+	err := os.MkdirAll(dataDir, 0755)
+	require.NoError(t, err)
+
+	repo, err := NewRepoOperation(pathDB)
+	require.NoError(t, err)
+	defer repo.db.Close()
+
+	ctx := context.Background()
+
+	// Store operation with explicit schema version
+	op := &Operation{
+		WorldName:        "altis",
+		MissionName:      "Schema Version Test",
+		MissionDuration:  3600,
+		Filename:         "schema_version_test",
+		Date:             "2026-01-30",
+		StorageFormat:    "json",
+		ConversionStatus: "completed",
+		SchemaVersion:    2,
+	}
+	err = repo.Store(ctx, op)
+	require.NoError(t, err)
+
+	// Register JSON engine
+	storage.RegisterEngine(storage.NewJSONEngine(dataDir))
+
+	hdlr := Handler{
+		repoOperation: repo,
+		setting:       Setting{Data: dataDir},
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/operations/1/format", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues("1")
+
+	err = hdlr.GetOperationFormat(c)
+	assert.NoError(t, err)
+
+	var result FormatInfo
+	err = json.Unmarshal(rec.Body.Bytes(), &result)
+	assert.NoError(t, err)
+	assert.Equal(t, uint32(2), result.SchemaVersion)
 }
