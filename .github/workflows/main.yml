@@ -137,6 +137,8 @@ jobs:
              build_commit=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   release-binaries:
     runs-on: ubuntu-latest
