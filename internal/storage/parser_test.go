@@ -145,6 +145,125 @@ func TestParserV1_Parse_MinimalData(t *testing.T) {
 	}
 }
 
+func TestParserV1_Parse_EdgeCases(t *testing.T) {
+	p := &ParserV1{}
+
+	t.Run("invalid entity type in array (not a map)", func(t *testing.T) {
+		data := map[string]interface{}{
+			"worldName":    "Altis",
+			"missionName":  "Test",
+			"endFrame":     10.0,
+			"captureDelay": 1.0,
+			"entities": []interface{}{
+				"not a map",                        // Invalid - should be skipped
+				[]interface{}{"also not a map"},    // Invalid - should be skipped
+				map[string]interface{}{"id": 0.0, "type": "unit", "name": "Valid"}, // Valid
+			},
+		}
+		result, err := p.Parse(data, 100)
+		if err != nil {
+			t.Fatalf("Parse returned error: %v", err)
+		}
+		if len(result.Entities) != 1 {
+			t.Errorf("len(Entities) = %d, want %d (invalid entries skipped)", len(result.Entities), 1)
+		}
+	})
+
+	t.Run("invalid event type in array (not an array)", func(t *testing.T) {
+		data := map[string]interface{}{
+			"worldName":    "Altis",
+			"missionName":  "Test",
+			"endFrame":     10.0,
+			"captureDelay": 1.0,
+			"entities":     []interface{}{},
+			"events": []interface{}{
+				"not an array",                         // Invalid - should be skipped
+				map[string]interface{}{"frame": 0.0},   // Invalid - should be skipped
+				[]interface{}{0.0},                     // Too short - should be skipped
+				[]interface{}{0.0, "valid"},            // Valid
+			},
+		}
+		result, err := p.Parse(data, 100)
+		if err != nil {
+			t.Fatalf("Parse returned error: %v", err)
+		}
+		if len(result.Events) != 1 {
+			t.Errorf("len(Events) = %d, want %d (invalid entries skipped)", len(result.Events), 1)
+		}
+	})
+
+	t.Run("invalid marker type in array (not an array)", func(t *testing.T) {
+		data := map[string]interface{}{
+			"worldName":    "Altis",
+			"missionName":  "Test",
+			"endFrame":     10.0,
+			"captureDelay": 1.0,
+			"entities":     []interface{}{},
+			"Markers": []interface{}{
+				"not an array",                         // Invalid - should be skipped
+				map[string]interface{}{"type": "ICON"}, // Invalid - should be skipped
+				[]interface{}{"ICON", "text", 0.0, 10.0, 0.0, "color", 0.0}, // Valid
+			},
+		}
+		result, err := p.Parse(data, 100)
+		if err != nil {
+			t.Fatalf("Parse returned error: %v", err)
+		}
+		if len(result.Markers) != 1 {
+			t.Errorf("len(Markers) = %d, want %d (invalid entries skipped)", len(result.Markers), 1)
+		}
+	})
+
+	t.Run("invalid time entry type (not a map)", func(t *testing.T) {
+		data := map[string]interface{}{
+			"worldName":    "Altis",
+			"missionName":  "Test",
+			"endFrame":     10.0,
+			"captureDelay": 1.0,
+			"entities":     []interface{}{},
+			"times": []interface{}{
+				"not a map",              // Invalid - should be skipped
+				[]interface{}{0.0, 1.0},  // Invalid - should be skipped
+				map[string]interface{}{"frameNum": 0.0, "time": 100.0}, // Valid
+			},
+		}
+		result, err := p.Parse(data, 100)
+		if err != nil {
+			t.Fatalf("Parse returned error: %v", err)
+		}
+		if len(result.Times) != 1 {
+			t.Errorf("len(Times) = %d, want %d (invalid entries skipped)", len(result.Times), 1)
+		}
+	})
+
+	t.Run("entity with nil position data", func(t *testing.T) {
+		data := map[string]interface{}{
+			"worldName":    "Altis",
+			"missionName":  "Test",
+			"endFrame":     10.0,
+			"captureDelay": 1.0,
+			"entities": []interface{}{
+				map[string]interface{}{
+					"id":   0.0,
+					"type": "unit",
+					"name": "NoPositions",
+					// No positions key
+				},
+			},
+		}
+		result, err := p.Parse(data, 100)
+		if err != nil {
+			t.Fatalf("Parse returned error: %v", err)
+		}
+		if len(result.Entities) != 1 {
+			t.Errorf("len(Entities) = %d, want %d", len(result.Entities), 1)
+		}
+		if len(result.EntityPositions) != 0 {
+			t.Errorf("len(EntityPositions) = %d, want %d (nil positions)", len(result.EntityPositions), 0)
+		}
+	})
+}
+
 func TestParserV1_Parse_Entities(t *testing.T) {
 	p := &ParserV1{}
 	data := map[string]interface{}{
@@ -307,7 +426,7 @@ func TestParserV1_Parse_Markers(t *testing.T) {
 				10.0,                                              // endFrame
 				0.0,                                               // playerId
 				"ColorBlufor",                                     // color
-				0.0,                                               // sideIndex (0 = WEST)
+				1.0,                                               // sideIndex (1 = WEST per BIS_fnc_sideID)
 				[]interface{}{[]interface{}{100.0, 200.0, 0.0}},   // positions
 				[]interface{}{1.0, 1.0},                           // size
 				"ICON",                                            // shape
@@ -364,6 +483,140 @@ func TestParserV1_Parse_Markers(t *testing.T) {
 		if pos.PosY != 200.0 {
 			t.Errorf("Marker.Positions[0].PosY = %v, want %v", pos.PosY, 200.0)
 		}
+	}
+}
+
+func TestParserV1_Parse_Markers_OldExtensionFormat(t *testing.T) {
+	p := &ParserV1{}
+	data := map[string]interface{}{
+		"worldName":    "Altis",
+		"missionName":  "Test",
+		"endFrame":     100.0,
+		"captureDelay": 1.0,
+		"entities":     []interface{}{},
+		"Markers": []interface{}{
+			[]interface{}{
+				"o_inf",                                         // type (old extension marker type)
+				"Enemy Squad",                                   // text
+				0.0,                                             // startFrame
+				-1.0,                                            // endFrame (-1 = not deleted, converted to frame count)
+				5.0,                                             // playerId
+				"0000FF",                                        // color (hex without #)
+				0.0,                                             // sideIndex (0 = EAST per BIS_fnc_sideID)
+				[]interface{}{                                   // positions in old extension format
+					[]interface{}{0.0, []interface{}{3915.44, 1971.98}, 180.0},       // [frameNum, [x,y], dir]
+					[]interface{}{50.0, []interface{}{3882.53, 2041.32}, 270.0, 100.0}, // [frameNum, [x,y], dir, alpha]
+				},
+				[]interface{}{1.0, 1.0}, // size
+				"ICON",                  // shape
+				"Solid",                 // brush
+			},
+		},
+	}
+
+	result, err := p.Parse(data, 100)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	if len(result.Markers) != 1 {
+		t.Fatalf("len(Markers) = %d, want %d", len(result.Markers), 1)
+	}
+
+	m := result.Markers[0]
+	if m.Type != "o_inf" {
+		t.Errorf("Marker.Type = %q, want %q", m.Type, "o_inf")
+	}
+	if m.Side != "EAST" {
+		t.Errorf("Marker.Side = %q, want %q (sideIndex 0 = EAST)", m.Side, "EAST")
+	}
+	if m.Color != "0000FF" {
+		t.Errorf("Marker.Color = %q, want %q", m.Color, "0000FF")
+	}
+
+	if len(m.Positions) != 2 {
+		t.Fatalf("len(Marker.Positions) = %d, want %d", len(m.Positions), 2)
+	}
+
+	// Check first position
+	pos1 := m.Positions[0]
+	if pos1.FrameNum != 0 {
+		t.Errorf("Positions[0].FrameNum = %d, want %d", pos1.FrameNum, 0)
+	}
+	if pos1.PosX != 3915.44 {
+		t.Errorf("Positions[0].PosX = %v, want %v", pos1.PosX, 3915.44)
+	}
+	if pos1.PosY != 1971.98 {
+		t.Errorf("Positions[0].PosY = %v, want %v", pos1.PosY, 1971.98)
+	}
+	if pos1.Direction != 180.0 {
+		t.Errorf("Positions[0].Direction = %v, want %v", pos1.Direction, 180.0)
+	}
+
+	// Check second position with alpha
+	pos2 := m.Positions[1]
+	if pos2.FrameNum != 50 {
+		t.Errorf("Positions[1].FrameNum = %d, want %d", pos2.FrameNum, 50)
+	}
+	if pos2.Alpha != 100.0 {
+		t.Errorf("Positions[1].Alpha = %v, want %v", pos2.Alpha, 100.0)
+	}
+}
+
+func TestParserV1_Parse_Events_OldExtensionFormat(t *testing.T) {
+	p := &ParserV1{}
+	data := map[string]interface{}{
+		"worldName":    "Altis",
+		"missionName":  "Test",
+		"endFrame":     100.0,
+		"captureDelay": 1.0,
+		"entities":     []interface{}{},
+		"events": []interface{}{
+			// Old extension killed event format
+			[]interface{}{404.0, "killed", 84.0, []interface{}{83.0, "AKS-74N"}, 10.0},
+			// Old extension hit event format
+			[]interface{}{3652.0, "killed", 160.0, []interface{}{83.0, "PKP Pecheneg"}, 80.0},
+			// Connected event (same format)
+			[]interface{}{0.0, "connected", "[RMC] DoS"},
+			// Disconnected event
+			[]interface{}{3312.0, "disconnected", "[VRG] mEss1a"},
+		},
+	}
+
+	result, err := p.Parse(data, 100)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+
+	if len(result.Events) != 4 {
+		t.Fatalf("len(Events) = %d, want %d", len(result.Events), 4)
+	}
+
+	// Check first killed event
+	evt := result.Events[0]
+	if evt.Type != "killed" {
+		t.Errorf("Event[0].Type = %q, want %q", evt.Type, "killed")
+	}
+	if evt.TargetID != 84 {
+		t.Errorf("Event[0].TargetID = %d, want %d (victimId)", evt.TargetID, 84)
+	}
+	if evt.SourceID != 83 {
+		t.Errorf("Event[0].SourceID = %d, want %d (killerId)", evt.SourceID, 83)
+	}
+	if evt.Weapon != "AKS-74N" {
+		t.Errorf("Event[0].Weapon = %q, want %q", evt.Weapon, "AKS-74N")
+	}
+	if evt.Distance != 10.0 {
+		t.Errorf("Event[0].Distance = %v, want %v", evt.Distance, 10.0)
+	}
+
+	// Check connected event
+	evt = result.Events[2]
+	if evt.Type != "connected" {
+		t.Errorf("Event[2].Type = %q, want %q", evt.Type, "connected")
+	}
+	if evt.Message != "[RMC] DoS" {
+		t.Errorf("Event[2].Message = %q, want %q", evt.Message, "[RMC] DoS")
 	}
 }
 
@@ -592,6 +845,215 @@ func TestParserV1_parseEvent_EdgeCases(t *testing.T) {
 			t.Errorf("Message = %q, want empty string", evt.Message)
 		}
 	})
+
+	// Old extension format tests
+	t.Run("old extension killed event [frameNum, type, victimId, [killerId, weapon], distance]", func(t *testing.T) {
+		// Old extension produces: [frameNum, "killed", victimId, [killerId, weaponName], distance]
+		evt := p.parseEvent([]interface{}{
+			404.0,                             // frameNum
+			"killed",                          // type
+			84.0,                              // victimId (TargetID)
+			[]interface{}{83.0, "AKS-74N"},    // [killerId, weaponName]
+			10.0,                              // distance
+		})
+		if evt == nil {
+			t.Fatal("expected non-nil event")
+		}
+		if evt.FrameNum != 404 {
+			t.Errorf("FrameNum = %d, want %d", evt.FrameNum, 404)
+		}
+		if evt.Type != "killed" {
+			t.Errorf("Type = %q, want %q", evt.Type, "killed")
+		}
+		if evt.TargetID != 84 {
+			t.Errorf("TargetID = %d, want %d (victimId)", evt.TargetID, 84)
+		}
+		if evt.SourceID != 83 {
+			t.Errorf("SourceID = %d, want %d (killerId)", evt.SourceID, 83)
+		}
+		if evt.Weapon != "AKS-74N" {
+			t.Errorf("Weapon = %q, want %q", evt.Weapon, "AKS-74N")
+		}
+		if evt.Distance != 10.0 {
+			t.Errorf("Distance = %v, want %v", evt.Distance, 10.0)
+		}
+	})
+
+	t.Run("old extension hit event [frameNum, type, victimId, [shooterId, weapon], distance]", func(t *testing.T) {
+		evt := p.parseEvent([]interface{}{
+			200.0,
+			"hit",
+			50.0,                                   // victimId
+			[]interface{}{42.0, "PKP Pecheneg"},    // [shooterId, weapon]
+			25.0,                                   // distance
+		})
+		if evt == nil {
+			t.Fatal("expected non-nil event")
+		}
+		if evt.TargetID != 50 {
+			t.Errorf("TargetID = %d, want %d", evt.TargetID, 50)
+		}
+		if evt.SourceID != 42 {
+			t.Errorf("SourceID = %d, want %d", evt.SourceID, 42)
+		}
+		if evt.Weapon != "PKP Pecheneg" {
+			t.Errorf("Weapon = %q, want %q", evt.Weapon, "PKP Pecheneg")
+		}
+	})
+
+	t.Run("old extension killed event with only killerId in array", func(t *testing.T) {
+		evt := p.parseEvent([]interface{}{
+			100.0,
+			"killed",
+			10.0,
+			[]interface{}{5.0}, // Only killerId, no weapon
+			50.0,
+		})
+		if evt == nil {
+			t.Fatal("expected non-nil event")
+		}
+		if evt.SourceID != 5 {
+			t.Errorf("SourceID = %d, want %d", evt.SourceID, 5)
+		}
+		if evt.Weapon != "" {
+			t.Errorf("Weapon = %q, want empty string", evt.Weapon)
+		}
+	})
+
+	t.Run("alternative format killed event [frameNum, type, sourceId, targetId, weapon, distance]", func(t *testing.T) {
+		// Alternative format: [frameNum, "type", sourceId, targetId, weapon, distance]
+		evt := p.parseEvent([]interface{}{
+			8.0,           // frameNum
+			"killed",      // type
+			0.0,           // sourceId
+			1.0,           // targetId
+			"arifle_MX",   // weapon
+			150.0,         // distance
+		})
+		if evt == nil {
+			t.Fatal("expected non-nil event")
+		}
+		if evt.SourceID != 0 {
+			t.Errorf("SourceID = %d, want %d", evt.SourceID, 0)
+		}
+		if evt.TargetID != 1 {
+			t.Errorf("TargetID = %d, want %d", evt.TargetID, 1)
+		}
+		if evt.Weapon != "arifle_MX" {
+			t.Errorf("Weapon = %q, want %q", evt.Weapon, "arifle_MX")
+		}
+		if evt.Distance != 150.0 {
+			t.Errorf("Distance = %v, want %v", evt.Distance, 150.0)
+		}
+	})
+
+	t.Run("non-combat event with message at index 4", func(t *testing.T) {
+		// Non-killed/hit event with string at index 4 should set Message
+		evt := p.parseEvent([]interface{}{
+			100.0,
+			"chat",
+			5.0,            // sourceId
+			10.0,           // targetId
+			"Hello world",  // message (not weapon since type is not killed/hit)
+		})
+		if evt == nil {
+			t.Fatal("expected non-nil event")
+		}
+		if evt.Message != "Hello world" {
+			t.Errorf("Message = %q, want %q", evt.Message, "Hello world")
+		}
+		if evt.Weapon != "" {
+			t.Errorf("Weapon = %q, want empty (not a combat event)", evt.Weapon)
+		}
+	})
+
+	t.Run("event with float distance at index 4", func(t *testing.T) {
+		// When index 4 is a float, it's treated as distance
+		evt := p.parseEvent([]interface{}{
+			100.0,
+			"explosion",
+			5.0,   // sourceId
+			10.0,  // targetId
+			50.5,  // distance as float
+		})
+		if evt == nil {
+			t.Fatal("expected non-nil event")
+		}
+		if evt.Distance != 50.5 {
+			t.Errorf("Distance = %v, want %v", evt.Distance, 50.5)
+		}
+	})
+
+	t.Run("event with only source (no target)", func(t *testing.T) {
+		evt := p.parseEvent([]interface{}{
+			100.0,
+			"fired",
+			5.0, // sourceId only
+		})
+		if evt == nil {
+			t.Fatal("expected non-nil event")
+		}
+		if evt.SourceID != 5 {
+			t.Errorf("SourceID = %d, want %d", evt.SourceID, 5)
+		}
+		if evt.TargetID != 0 {
+			t.Errorf("TargetID = %d, want %d (not set)", evt.TargetID, 0)
+		}
+	})
+
+	t.Run("old extension event with empty killer array", func(t *testing.T) {
+		evt := p.parseEvent([]interface{}{
+			100.0,
+			"killed",
+			10.0,
+			[]interface{}{}, // Empty array - no killer info
+			50.0,
+		})
+		if evt == nil {
+			t.Fatal("expected non-nil event")
+		}
+		if evt.TargetID != 10 {
+			t.Errorf("TargetID = %d, want %d", evt.TargetID, 10)
+		}
+		if evt.SourceID != 0 {
+			t.Errorf("SourceID = %d, want %d (empty array)", evt.SourceID, 0)
+		}
+		if evt.Distance != 50.0 {
+			t.Errorf("Distance = %v, want %v", evt.Distance, 50.0)
+		}
+	})
+
+	t.Run("old extension event without distance", func(t *testing.T) {
+		evt := p.parseEvent([]interface{}{
+			100.0,
+			"killed",
+			10.0,
+			[]interface{}{5.0, "rifle"},
+			// No distance
+		})
+		if evt == nil {
+			t.Fatal("expected non-nil event")
+		}
+		if evt.Distance != 0 {
+			t.Errorf("Distance = %v, want %v (not set)", evt.Distance, 0.0)
+		}
+	})
+
+	t.Run("old extension event with non-float distance", func(t *testing.T) {
+		evt := p.parseEvent([]interface{}{
+			100.0,
+			"killed",
+			10.0,
+			[]interface{}{5.0, "rifle"},
+			"not a number", // Distance that's not a float
+		})
+		if evt == nil {
+			t.Fatal("expected non-nil event")
+		}
+		if evt.Distance != 0 {
+			t.Errorf("Distance = %v, want %v (invalid type)", evt.Distance, 0.0)
+		}
+	})
 }
 
 func TestParserV1_parseMarker_EdgeCases(t *testing.T) {
@@ -657,6 +1119,62 @@ func TestParserV1_parseMarkerPosition_Formats(t *testing.T) {
 		}
 	})
 
+	t.Run("old extension format [frameNum, [x, y], direction]", func(t *testing.T) {
+		// Old extension produces: [frameNum, [x, y], direction, ?alpha]
+		pos := p.parseMarkerPosition([]interface{}{
+			50.0,                        // frameNum
+			[]interface{}{100.0, 200.0}, // [x, y]
+			90.0,                        // direction
+		})
+		if pos == nil {
+			t.Fatal("expected non-nil position")
+		}
+		if pos.FrameNum != 50 {
+			t.Errorf("FrameNum = %d, want %d", pos.FrameNum, 50)
+		}
+		if pos.PosX != 100.0 {
+			t.Errorf("PosX = %v, want %v", pos.PosX, 100.0)
+		}
+		if pos.PosY != 200.0 {
+			t.Errorf("PosY = %v, want %v", pos.PosY, 200.0)
+		}
+		if pos.Direction != 90.0 {
+			t.Errorf("Direction = %v, want %v", pos.Direction, 90.0)
+		}
+	})
+
+	t.Run("old extension format [frameNum, [x, y], direction, alpha]", func(t *testing.T) {
+		pos := p.parseMarkerPosition([]interface{}{
+			50.0,                        // frameNum
+			[]interface{}{100.0, 200.0}, // [x, y]
+			90.0,                        // direction
+			75.0,                        // alpha
+		})
+		if pos == nil {
+			t.Fatal("expected non-nil position")
+		}
+		if pos.FrameNum != 50 {
+			t.Errorf("FrameNum = %d, want %d", pos.FrameNum, 50)
+		}
+		if pos.Alpha != 75.0 {
+			t.Errorf("Alpha = %v, want %v", pos.Alpha, 75.0)
+		}
+	})
+
+	t.Run("old extension format [frameNum, [x, y, z], direction]", func(t *testing.T) {
+		pos := p.parseMarkerPosition([]interface{}{
+			50.0,                              // frameNum
+			[]interface{}{100.0, 200.0, 10.0}, // [x, y, z]
+			90.0,                              // direction
+		})
+		if pos == nil {
+			t.Fatal("expected non-nil position")
+		}
+		if pos.PosZ != 10.0 {
+			t.Errorf("PosZ = %v, want %v", pos.PosZ, 10.0)
+		}
+	})
+
 	t.Run("nil input", func(t *testing.T) {
 		pos := p.parseMarkerPosition(nil)
 		if pos != nil {
@@ -696,16 +1214,17 @@ func TestParserV1_calculateEndFrame(t *testing.T) {
 }
 
 func TestSideIndexToString(t *testing.T) {
+	// Old extension uses BIS_fnc_sideID: -1=global, 0=EAST, 1=WEST, 2=RESISTANCE, 3=CIVILIAN
 	tests := []struct {
 		input int
 		want  string
 	}{
-		{0, "WEST"},
-		{1, "EAST"},
+		{0, "EAST"},
+		{1, "WEST"},
 		{2, "GUER"},
 		{3, "CIV"},
 		{4, ""},
-		{-1, ""},
+		{-1, "GLOBAL"},
 		{100, ""},
 	}
 
