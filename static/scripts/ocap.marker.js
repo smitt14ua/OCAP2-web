@@ -1,3 +1,81 @@
+// Ensure pattern fills are applied after any style update
+// This patches Leaflet's SVG renderer to always check for fillPattern
+(function() {
+	if (!L.SVG) return;
+
+	const originalUpdateStyle = L.SVG.prototype._updateStyle;
+	L.SVG.prototype._updateStyle = function(layer) {
+		originalUpdateStyle.call(this, layer);
+
+		// Apply fill pattern if present (Canvas doesn't support this, only SVG)
+		if (layer.options && layer.options.fillPattern && layer._path) {
+			const patternUrl = L.Pattern._getPatternUrl(L.stamp(layer.options.fillPattern));
+			layer._path.setAttribute('fill', patternUrl);
+		}
+	};
+})();
+
+// Custom GridPattern for true grid/cross patterns (horizontal + vertical lines)
+L.GridPattern = L.Pattern.extend({
+	options: {
+		weight: 2,
+		spaceWeight: 4,
+		color: '#ffffff',        // Grid line color (default white)
+		backgroundColor: null,   // Background color (if set, fills behind grid)
+		opacity: 1.0,
+		backgroundOpacity: 0.5
+	},
+
+	_addShapes: function () {
+		// Calculate size first
+		var w = this.options.weight;
+		var s = this.options.spaceWeight;
+		var size = w + s;
+
+		// Update pattern dimensions before creating shapes
+		this.options.width = size;
+		this.options.height = size;
+
+		// Add background rectangle if backgroundColor is set
+		if (this.options.backgroundColor) {
+			this._bg = new L.PatternRect({
+				x: 0,
+				y: 0,
+				width: size,
+				height: size,
+				fill: true,
+				fillColor: this.options.backgroundColor,
+				fillOpacity: this.options.backgroundOpacity,
+				stroke: false
+			});
+			this.addShape(this._bg);
+		}
+
+		// Horizontal line
+		this._hLine = new L.PatternPath({
+			stroke: true,
+			weight: this.options.weight,
+			color: this.options.color,
+			opacity: this.options.opacity,
+			d: 'M0 ' + (w / 2) + ' H ' + size
+		});
+
+		// Vertical line
+		this._vLine = new L.PatternPath({
+			stroke: true,
+			weight: this.options.weight,
+			color: this.options.color,
+			opacity: this.options.opacity,
+			d: 'M' + (w / 2) + ' 0 V ' + size
+		});
+
+		this.addShape(this._hLine);
+		this.addShape(this._vLine);
+	},
+
+	setStyle: L.Pattern.prototype.setStyle
+});
+
 class Marker {
 	constructor(type, text, player, color, startFrame, endFrame, side, positions, size, shape, brush) {
 		this._type = type;
@@ -118,18 +196,21 @@ class Marker {
 					break;
 				case "grid":
 				case "Grid":
+				case "GRID":
 					this._brushPatternOptions = {
-						color: this._color,
-						opacity: 0.8,
-						angle: 90,
-						weight: 1,
-						spaceWeight: 1
+						color: this._color,           // Grid lines (marker color)
+						backgroundColor: this._color, // Light background (marker color, low opacity)
+						backgroundOpacity: 0.3,
+						opacity: 0.5,                 // Reduced intensity for grid lines
+						weight: 2,
+						spaceWeight: 6
 					};
+					this._useGridPattern = true; // Use L.GridPattern for true grid
 					this._shapeOptions = {
 						color: this._color,
 						stroke: false,
 						fill: true,
-						fillOpacity: 0.2
+						fillOpacity: 1.0  // Full opacity since pattern handles transparency
 					};
 					break;
 				case "fdiagonal":
@@ -183,18 +264,21 @@ class Marker {
 					break;
 				case "cross":
 				case "Cross":
+				case "CROSS":
 					this._brushPatternOptions = {
-						color: this._color,
-						opacity: 0.8,
-						angle: 90,
-						weight: 1,
-						spaceWeight: 1
+						color: this._color,           // Cross lines (marker color)
+						backgroundColor: this._color, // Light background (marker color, low opacity)
+						backgroundOpacity: 0.3,
+						opacity: 0.5,                 // Reduced intensity for cross lines
+						weight: 2,
+						spaceWeight: 6
 					};
+					this._useGridPattern = true; // Use L.GridPattern for cross pattern
 					this._shapeOptions = {
 						color: this._color,
 						stroke: false,
 						fill: true,
-						fillOpacity: 0.2
+						fillOpacity: 1.0
 					};
 					break;
 				case "border":
@@ -219,9 +303,13 @@ class Marker {
 					break;
 			}
 
-			// Create stripe pattern if brush options were set
+			// Create pattern if brush options were set
 			if (this._brushPatternOptions) {
-				this._brushPattern = new L.StripePattern(this._brushPatternOptions);
+				if (this._useGridPattern) {
+					this._brushPattern = new L.GridPattern(this._brushPatternOptions);
+				} else {
+					this._brushPattern = new L.StripePattern(this._brushPatternOptions);
+				}
 			}
 		} else {
 			this._shapeOptions = {
@@ -273,14 +361,13 @@ class Marker {
 		let alpha = frameData[3];
 
 		if (this._shape === "RECTANGLE" && Array.isArray(pos[0])) {
-			console.debug("wrong RECTANGLE positions, converting to POLYLINE");
 			this._shape = "POLYLINE";
 		}
 
 		let latLng;
 		let points;
 		if (this._marker == null) {
-			// console.debug(`UPDATE AT FRAME: attempting to create marker ${this._name}`)
+			// console.log(`UPDATE AT FRAME: attempting to create marker ${this._name}`)
 
 			if (this._shape === "ICON") {
 				latLng = armaToLatLng(pos);
@@ -340,7 +427,7 @@ class Marker {
 				this._createMarker(points, dir, alpha);
 			}
 		} else {
-			// console.debug(`UPDATE AT FRAME: attempting to update marker ${this._name}`)
+			// console.log(`UPDATE AT FRAME: attempting to update marker ${this._name}`)
 
 			if (this._shape === "ICON") {
 				latLng = armaToLatLng(pos);
@@ -475,15 +562,7 @@ class Marker {
 
 	show (alpha) {
 		this._isShow = true;
-		if (this._shape == "ICON") {
-			this.setMarkerOpacity(alpha);
-		} else if (this._shape == "ELLIPSE") {
-			this.setMarkerOpacity(alpha);
-		} else if (this._shape == "RECTANGLE") {
-			this.setMarkerOpacity(alpha);
-		} else if (this._shape == "POLYLINE") {
-			this.setMarkerOpacity(alpha);
-		}
+		this.setMarkerOpacity(alpha);
 	}
 
 	_createMarker (latLng, dir, alpha) {
@@ -566,27 +645,30 @@ class Marker {
 			marker.setRotationAngle(dir);
 		}
 
-		if (this._shape === "ELLIPSE") {
-			// latLng now contains polygon points (calculated in _updateAtFrame)
-			if (this._brushPattern) {
-				this._brushPattern.addTo(map);
-				marker = L.polygon(latLng, { noClip: false, interactive: false, fillPattern: this._brushPattern });
-				L.Util.setOptions(marker, this._shapeOptions);
-			} else {
-				marker = L.polygon(latLng, { noClip: false, interactive: false });
-				L.Util.setOptions(marker, this._shapeOptions);
-			}
-			marker.addTo(systemMarkersLayerGroup);
-		} else if (this._shape === "RECTANGLE") {
-			if (this._brushPattern) {
-				this._brushPattern.addTo(map);
-				marker = L.polygon(latLng, { noClip: false, interactive: false, fillPattern: this._brushPattern });
-				L.Util.setOptions(marker, this._shapeOptions);
-			} else {
-				marker = L.polygon(latLng, { noClip: false, interactive: false });
-				L.Util.setOptions(marker, this._shapeOptions);
+		if (this._shape === "ELLIPSE" || this._shape === "RECTANGLE") {
+			// latLng contains polygon points (calculated in _updateAtFrame)
+			let polygonOptions = Object.assign({}, this._shapeOptions, { noClip: false, interactive: false });
+
+			if (this._brushPattern && window.svgRenderer) {
+				// Use SVG renderer for pattern fills (Canvas doesn't support SVG patterns)
+				polygonOptions.renderer = window.svgRenderer;
+
+				// Add pattern to SVG renderer's defs
+				if (window.svgRenderer._container) {
+					if (!map._svgDefRoot) {
+						map._svgDefRoot = L.SVG.create('defs');
+						window.svgRenderer._container.appendChild(map._svgDefRoot);
+					}
+					this._brushPattern._map = map;
+					this._brushPattern._initDom();
+					map._svgDefRoot.appendChild(this._brushPattern._dom);
+					this._brushPattern._addShapes();
+					this._brushPattern.redraw();
+				}
+				polygonOptions.fillPattern = this._brushPattern;
 			}
 
+			marker = L.polygon(latLng, polygonOptions);
 			marker.addTo(systemMarkersLayerGroup);
 		} else if (this._shape === "POLYLINE") {
 			marker = L.polyline(latLng, { color: this._color, opacity: 1, noClip: true, lineCap: 'butt', lineJoin: 'round', interactive: false })
