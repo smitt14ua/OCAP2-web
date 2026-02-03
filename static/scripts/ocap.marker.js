@@ -239,7 +239,7 @@ class Marker {
 	}
 
 	updateRender (f) {
-		if (this._shape === "RECTANGLE") {
+		if (this._shape === "RECTANGLE" || this._shape === "ELLIPSE") {
 			const frameIndex = this._markerOnFrame(f);
 			if (frameIndex >= 0 && (this._side === ui.currentSide || this._side === "GLOBAL")) {
 				this._updateAtFrame(frameIndex);
@@ -287,9 +287,23 @@ class Marker {
 				if (alpha === undefined || alpha === null) { alpha = 1 }
 				this._createMarker(latLng, dir, alpha);
 			} else if (this._shape === "ELLIPSE") {
-				latLng = armaToLatLng(pos);
+				let centerX = pos[0];
+				let centerY = pos[1];
+				// Ensure size is valid array, fallback to [100, 100] if not
+				let radiusX = (Array.isArray(this._size) && this._size[0]) ? this._size[0] : 100;
+				let radiusY = (Array.isArray(this._size) && this._size[1]) ? this._size[1] : 100;
+
+				// Calculate ellipse perimeter points in Arma coordinates
+				let pointsRaw = this._calculateEllipsePoints(centerX, centerY, radiusX, radiusY);
+				points = pointsRaw.map(coord => {
+					return armaToLatLng(coord);
+				});
+
+				// Apply rotation around center
+				let pointsRotate = this._rotatePoints(armaToLatLng(pos), points, dir);
+
 				if (alpha === undefined || alpha === null) { alpha = 0.2 }
-				this._createMarker(latLng, dir, alpha);
+				this._createMarker(pointsRotate, dir, alpha);
 			} else if (this._shape === "RECTANGLE") {
 				let startX = pos[0];
 				let startY = pos[1];
@@ -336,17 +350,32 @@ class Marker {
 				this._marker.setLatLng(latLng);
 			} else if (this._shape === "ELLIPSE") {
 				latLng = armaToLatLng(pos);
+				let centerX = pos[0];
+				let centerY = pos[1];
+				// Ensure size is valid array, fallback to [100, 100] if not
+				let radiusX = (Array.isArray(this._size) && this._size[0]) ? this._size[0] : 100;
+				let radiusY = (Array.isArray(this._size) && this._size[1]) ? this._size[1] : 100;
 				if (alpha === undefined || alpha === null) { alpha = 0.3 }
+
+				// Calculate ellipse perimeter points in Arma coordinates
+				let pointsRaw = this._calculateEllipsePoints(centerX, centerY, radiusX, radiusY);
+				points = pointsRaw.map(coord => {
+					return armaToLatLng(coord);
+				});
 
 				// check if update is needed
 				let variance = 0;
-				let curMarkerCenter = this._marker._latlng;
-				variance = variance + Math.abs((Math.abs(curMarkerCenter.lat) - Math.abs(latLng.lat)));
-				variance = variance + Math.abs((Math.abs(curMarkerCenter.lng) - Math.abs(latLng.lng)));
+				try {
+					let curMarkerCenter = this._marker.getCenter();
+					variance = variance + Math.abs((Math.abs(curMarkerCenter.lat) - Math.abs(latLng.lat)));
+					variance = variance + Math.abs((Math.abs(curMarkerCenter.lng) - Math.abs(latLng.lng)));
 
-				// if (variance > 5) {
-				this._marker.setLatLng(latLng).redraw();
-				// };
+					// Apply rotation around center
+					let pointsRotate = this._rotatePoints(armaToLatLng(pos), points, dir);
+					this._marker.setLatLngs(pointsRotate).redraw();
+				} catch {
+					// If the layer is hidden, this will error because _marker.getCenter() will fail
+				}
 			} else if (this._shape === "RECTANGLE") {
 				latLng = armaToLatLng(pos);
 				let startX = pos[0];
@@ -407,6 +436,21 @@ class Marker {
 			res.push(p4)
 		}
 		return res
+	}
+
+	// Calculate ellipse perimeter points in Arma coordinates
+	// cx, cy: center position in Arma meters
+	// rx, ry: radii in Arma meters (from markerSize)
+	// Returns array of [x, y] points in Arma coordinates
+	_calculateEllipsePoints (cx, cy, rx, ry, numPoints = 36) {
+		const points = [];
+		for (let i = 0; i < numPoints; i++) {
+			const angle = (i / numPoints) * 2 * Math.PI;
+			const x = cx + rx * Math.cos(angle);
+			const y = cy + ry * Math.sin(angle);
+			points.push([x, y]);
+		}
+		return points;
 	}
 
 	isMagIcon () {
@@ -523,14 +567,13 @@ class Marker {
 		}
 
 		if (this._shape === "ELLIPSE") {
-			let rad = this._size[0] * 0.015 * window.multiplier;
-
+			// latLng now contains polygon points (calculated in _updateAtFrame)
 			if (this._brushPattern) {
 				this._brushPattern.addTo(map);
-				marker = L.circle(latLng, { radius: rad, noClip: false, interactive: false, fillPattern: this._brushPattern });
+				marker = L.polygon(latLng, { noClip: false, interactive: false, fillPattern: this._brushPattern });
 				L.Util.setOptions(marker, this._shapeOptions);
 			} else {
-				marker = L.circle(latLng, { radius: rad, noClip: false, interactive: false });
+				marker = L.polygon(latLng, { noClip: false, interactive: false });
 				L.Util.setOptions(marker, this._shapeOptions);
 			}
 			marker.addTo(systemMarkersLayerGroup);
