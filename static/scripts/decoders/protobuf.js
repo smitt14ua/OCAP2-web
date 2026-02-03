@@ -358,7 +358,8 @@ const ProtobufDecoder = (function() {
             posY: 0,
             posZ: 0,
             direction: 0,
-            alpha: 1.0
+            alpha: 1.0,
+            lineCoords: []  // For POLYLINE: [x1, y1, x2, y2, ...] pairs
         };
 
         while (reader.pos < endPos) {
@@ -372,6 +373,18 @@ const ProtobufDecoder = (function() {
                 case 4: pos.posZ = reader.readFloat(); break;
                 case 5: pos.direction = reader.readFloat(); break;
                 case 6: pos.alpha = reader.readFloat(); break;
+                case 7:
+                    // Packed repeated float for line coordinates
+                    if (tag.wireType === WIRE_LENGTH_DELIMITED) {
+                        const len = reader.readVarint();
+                        const end = reader.pos + len;
+                        while (reader.pos < end) {
+                            pos.lineCoords.push(reader.readFloat());
+                        }
+                    } else {
+                        pos.lineCoords.push(reader.readFloat());
+                    }
+                    break;
                 default: reader.skip(tag.wireType);
             }
         }

@@ -181,7 +181,7 @@ Each archive contains the binary and required assets (markers, ammo, static file
 
 ### Build from source
 
-Requires [Go 1.24+](https://golang.org/dl/)
+Requires [Go 1.24+](https://golang.org/dl/), [protoc](https://grpc.io/docs/protoc-installation/), and [flatc](https://flatbuffers.dev/flatbuffers_guide_building.html) (for schema changes only).
 
 ```bash
 # Linux / macOS
@@ -189,6 +189,9 @@ go build -o ocap-webserver ./cmd/ocap-webserver
 
 # Windows
 go build -o ocap-webserver.exe ./cmd/ocap-webserver
+
+# Regenerate protobuf/flatbuffers code (after modifying .proto or .fbs files)
+go generate ./pkg/schemas/...
 
 # Docker
 docker build -t ocap-webserver .

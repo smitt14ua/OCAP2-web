@@ -113,8 +113,34 @@ func (rcv *MarkerPosition) MutateAlpha(n float32) bool {
 	return rcv._tab.MutateFloat32Slot(14, n)
 }
 
+func (rcv *MarkerPosition) LineCoords(j int) float32 {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(16))
+	if o != 0 {
+		a := rcv._tab.Vector(o)
+		return rcv._tab.GetFloat32(a + flatbuffers.UOffsetT(j*4))
+	}
+	return 0
+}
+
+func (rcv *MarkerPosition) LineCoordsLength() int {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(16))
+	if o != 0 {
+		return rcv._tab.VectorLen(o)
+	}
+	return 0
+}
+
+func (rcv *MarkerPosition) MutateLineCoords(j int, n float32) bool {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(16))
+	if o != 0 {
+		a := rcv._tab.Vector(o)
+		return rcv._tab.MutateFloat32(a+flatbuffers.UOffsetT(j*4), n)
+	}
+	return false
+}
+
 func MarkerPositionStart(builder *flatbuffers.Builder) {
-	builder.StartObject(6)
+	builder.StartObject(7)
 }
 func MarkerPositionAddFrameNum(builder *flatbuffers.Builder, frameNum uint32) {
 	builder.PrependUint32Slot(0, frameNum, 0)
@@ -133,6 +159,12 @@ func MarkerPositionAddDirection(builder *flatbuffers.Builder, direction float32)
 }
 func MarkerPositionAddAlpha(builder *flatbuffers.Builder, alpha float32) {
 	builder.PrependFloat32Slot(5, alpha, 0.0)
+}
+func MarkerPositionAddLineCoords(builder *flatbuffers.Builder, lineCoords flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(6, flatbuffers.UOffsetT(lineCoords), 0)
+}
+func MarkerPositionStartLineCoordsVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
+	return builder.StartVector(4, numElems, 4)
 }
 func MarkerPositionEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

@@ -254,6 +254,7 @@ func (p *ParserV1) parseMarker(markerArr []interface{}) *MarkerDef {
 func (p *ParserV1) parseMarkerPosition(pos interface{}) *MarkerPosition {
 	// Position formats:
 	// - Old extension format: [frameNum, [x, y], direction, ?alpha]
+	// - POLYLINE format: [frameNum, [[x1, y1], [x2, y2], ...], direction, alpha]
 	// - Alternative format: [[x, y, z], frameNum, direction, alpha]
 	// - Simple format: [x, y, z]
 	arr, ok := pos.([]interface{})
@@ -263,18 +264,40 @@ func (p *ParserV1) parseMarkerPosition(pos interface{}) *MarkerPosition {
 
 	mp := &MarkerPosition{}
 
-	// Check if second element is a position array (old extension format)
+	// Check if second element is a position array (old extension format or POLYLINE)
 	if len(arr) > 1 {
 		if posArr, ok := arr[1].([]interface{}); ok {
-			// Old extension format: [frameNum, [x, y], direction, ?alpha]
 			mp.FrameNum = uint32(toFloat64(arr[0]))
-			if len(posArr) >= 2 {
-				mp.PosX = float32(toFloat64(posArr[0]))
-				mp.PosY = float32(toFloat64(posArr[1]))
-				if len(posArr) > 2 {
-					mp.PosZ = float32(toFloat64(posArr[2]))
+
+			// Check if this is POLYLINE format: [[x1, y1], [x2, y2], ...]
+			// by checking if first element of posArr is also an array
+			if len(posArr) > 0 {
+				if coordArr, isPolyline := posArr[0].([]interface{}); isPolyline {
+					// POLYLINE format: [frameNum, [[x1, y1], [x2, y2], ...], direction, alpha]
+					// Store all coordinates as flat array [x1, y1, x2, y2, ...]
+					for _, coord := range posArr {
+						if xy, ok := coord.([]interface{}); ok && len(xy) >= 2 {
+							mp.LineCoords = append(mp.LineCoords, float32(toFloat64(xy[0])))
+							mp.LineCoords = append(mp.LineCoords, float32(toFloat64(xy[1])))
+						}
+					}
+					// Set first coordinate as PosX/PosY for backwards compatibility
+					if len(coordArr) >= 2 {
+						mp.PosX = float32(toFloat64(coordArr[0]))
+						mp.PosY = float32(toFloat64(coordArr[1]))
+					}
+				} else {
+					// Old extension format: [frameNum, [x, y], direction, ?alpha]
+					if len(posArr) >= 2 {
+						mp.PosX = float32(toFloat64(posArr[0]))
+						mp.PosY = float32(toFloat64(posArr[1]))
+						if len(posArr) > 2 {
+							mp.PosZ = float32(toFloat64(posArr[2]))
+						}
+					}
 				}
 			}
+
 			if len(arr) > 2 {
 				mp.Direction = float32(toFloat64(arr[2]))
 			}

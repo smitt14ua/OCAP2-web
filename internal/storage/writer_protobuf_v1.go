@@ -175,12 +175,13 @@ func (w *ProtobufWriterV1) toProtoMarker(m MarkerDef) *pbv1.MarkerDef {
 	// Convert positions
 	for _, p := range m.Positions {
 		marker.Positions = append(marker.Positions, &pbv1.MarkerPosition{
-			FrameNum:  p.FrameNum,
-			PosX:      p.PosX,
-			PosY:      p.PosY,
-			PosZ:      p.PosZ,
-			Direction: p.Direction,
-			Alpha:     p.Alpha,
+			FrameNum:   p.FrameNum,
+			PosX:       p.PosX,
+			PosY:       p.PosY,
+			PosZ:       p.PosZ,
+			Direction:  p.Direction,
+			Alpha:      p.Alpha,
+			LineCoords: p.LineCoords,
 		})
 	}
 

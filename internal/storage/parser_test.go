@@ -1188,6 +1188,48 @@ func TestParserV1_parseMarkerPosition_Formats(t *testing.T) {
 			t.Error("expected nil for empty array")
 		}
 	})
+
+	t.Run("POLYLINE format [frameNum, [[x1, y1], [x2, y2], ...], direction, alpha]", func(t *testing.T) {
+		pos := p.parseMarkerPosition([]interface{}{
+			67.0, // frameNum
+			[]interface{}{ // array of coordinate pairs
+				[]interface{}{7610.62, 20901.1},
+				[]interface{}{7647.86, 20901.1},
+				[]interface{}{7745.6, 20887.2},
+			},
+			0.0, // direction
+			1.0, // alpha
+		})
+		if pos == nil {
+			t.Fatal("expected non-nil position")
+		}
+		if pos.FrameNum != 67 {
+			t.Errorf("FrameNum = %d, want %d", pos.FrameNum, 67)
+		}
+		// First coordinate should be set as PosX/PosY for backwards compatibility
+		if pos.PosX != 7610.62 {
+			t.Errorf("PosX = %v, want %v", pos.PosX, 7610.62)
+		}
+		if pos.PosY != 20901.1 {
+			t.Errorf("PosY = %v, want %v", pos.PosY, 20901.1)
+		}
+		// LineCoords should contain all coordinates as flat array
+		expectedCoords := []float32{7610.62, 20901.1, 7647.86, 20901.1, 7745.6, 20887.2}
+		if len(pos.LineCoords) != len(expectedCoords) {
+			t.Errorf("len(LineCoords) = %d, want %d", len(pos.LineCoords), len(expectedCoords))
+		}
+		for i, v := range expectedCoords {
+			if i < len(pos.LineCoords) && pos.LineCoords[i] != v {
+				t.Errorf("LineCoords[%d] = %v, want %v", i, pos.LineCoords[i], v)
+			}
+		}
+		if pos.Direction != 0.0 {
+			t.Errorf("Direction = %v, want %v", pos.Direction, 0.0)
+		}
+		if pos.Alpha != 1.0 {
+			t.Errorf("Alpha = %v, want %v", pos.Alpha, 1.0)
+		}
+	})
 }
 
 func TestParserV1_calculateEndFrame(t *testing.T) {

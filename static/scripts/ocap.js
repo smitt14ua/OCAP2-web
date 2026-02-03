@@ -1953,12 +1953,20 @@ async function processOpStreaming(operationId, format = 'protobuf', schemaVersio
 
 		const player = m.playerId >= 0 ? entities.getById(m.playerId) : -1;
 		// Format: [frameNum, [posX, posY, posZ], direction, alpha]
-		const positions = m.positions.map(p => [
-			p.frameNum,
-			[p.posX, p.posY, p.posZ],
-			p.direction,
-			p.alpha
-		]);
+		// For POLYLINE: [frameNum, [[x1, y1], [x2, y2], ...], direction, alpha]
+		const positions = m.positions.map(p => {
+			// Check if this position has POLYLINE coordinates
+			if (p.lineCoords && p.lineCoords.length >= 4) {
+				// Convert flat [x1, y1, x2, y2, ...] to [[x1, y1], [x2, y2], ...]
+				const coords = [];
+				for (let i = 0; i < p.lineCoords.length; i += 2) {
+					coords.push([p.lineCoords[i], p.lineCoords[i + 1]]);
+				}
+				return [p.frameNum, coords, p.direction, p.alpha];
+			}
+			// Regular single-point position
+			return [p.frameNum, [p.posX, p.posY, p.posZ], p.direction, p.alpha];
+		});
 
 		const marker = new Marker(
 			m.type,

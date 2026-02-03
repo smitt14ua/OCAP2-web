@@ -46,12 +46,13 @@ type MarkerDef struct {
 
 // MarkerPosition is a marker position at a specific frame
 type MarkerPosition struct {
-	FrameNum  uint32
-	PosX      float32
-	PosY      float32
-	PosZ      float32
-	Direction float32
-	Alpha     float32
+	FrameNum   uint32
+	PosX       float32
+	PosY       float32
+	PosZ       float32
+	Direction  float32
+	Alpha      float32
+	LineCoords []float32 // For POLYLINE: [x1, y1, x2, y2, ...] pairs
 }
 
 // TimeSample is schema-agnostic time sample

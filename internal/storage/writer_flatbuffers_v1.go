@@ -218,6 +218,16 @@ func (w *FlatBuffersWriterV1) toFBMarker(builder *flatbuffers.Builder, m MarkerD
 	// Build positions
 	posOffsets := make([]flatbuffers.UOffsetT, len(m.Positions))
 	for i, p := range m.Positions {
+		// Build line_coords vector if present
+		var lineCoordsVec flatbuffers.UOffsetT
+		if len(p.LineCoords) > 0 {
+			fbv1.MarkerPositionStartLineCoordsVector(builder, len(p.LineCoords))
+			for j := len(p.LineCoords) - 1; j >= 0; j-- {
+				builder.PrependFloat32(p.LineCoords[j])
+			}
+			lineCoordsVec = builder.EndVector(len(p.LineCoords))
+		}
+
 		fbv1.MarkerPositionStart(builder)
 		fbv1.MarkerPositionAddFrameNum(builder, p.FrameNum)
 		fbv1.MarkerPositionAddPosX(builder, p.PosX)
@@ -225,6 +235,9 @@ func (w *FlatBuffersWriterV1) toFBMarker(builder *flatbuffers.Builder, m MarkerD
 		fbv1.MarkerPositionAddPosZ(builder, p.PosZ)
 		fbv1.MarkerPositionAddDirection(builder, p.Direction)
 		fbv1.MarkerPositionAddAlpha(builder, p.Alpha)
+		if len(p.LineCoords) > 0 {
+			fbv1.MarkerPositionAddLineCoords(builder, lineCoordsVec)
+		}
 		posOffsets[i] = fbv1.MarkerPositionEnd(builder)
 	}
 
