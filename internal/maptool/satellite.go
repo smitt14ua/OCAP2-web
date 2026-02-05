@@ -3,6 +3,7 @@ package maptool
 import (
 	"context"
 	"fmt"
+	"image"
 	"image/png"
 	"log"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
 	"github.com/OCAP2/web/internal/maptool/paa"
 )
 
@@ -20,6 +22,8 @@ import (
 type SatTile struct {
 	X       int    // grid X coordinate
 	Y       int    // grid Y coordinate
+	Width   int    // decoded image width in pixels
+	Height  int    // decoded image height in pixels
 	PNGPath string // path to decoded PNG file
 }
 
@@ -87,6 +91,19 @@ func decodePAAToTile(paaPath, pngDir string) (SatTile, error) {
 		return SatTile{}, fmt.Errorf("decode PAA: %w", err)
 	}
 
+	bounds := img.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+
+	// Upscale undersized tiles (e.g. 4×4 ocean placeholders) to 512×512
+	// so all PNGs match the VRT's hardcoded 512×512 SrcRect.
+	var finalImg image.Image = img
+	if w < 512 || h < 512 {
+		scaled := image.NewNRGBA(image.Rect(0, 0, 512, 512))
+		nearestNeighborScale(scaled, img)
+		finalImg = scaled
+		w, h = 512, 512
+	}
+
 	pngPath := filepath.Join(pngDir, fmt.Sprintf("s_%03d_%03d_lco.png", x, y))
 	out, err := os.Create(pngPath)
 	if err != nil {
@@ -94,11 +111,26 @@ func decodePAAToTile(paaPath, pngDir string) (SatTile, error) {
 	}
 	defer out.Close()
 
-	if err := png.Encode(out, img); err != nil {
+	if err := png.Encode(out, finalImg); err != nil {
 		return SatTile{}, fmt.Errorf("encode PNG: %w", err)
 	}
 
-	return SatTile{X: x, Y: y, PNGPath: pngPath}, nil
+	return SatTile{X: x, Y: y, Width: w, Height: h, PNGPath: pngPath}, nil
+}
+
+// nearestNeighborScale scales src into dst using nearest-neighbor interpolation.
+func nearestNeighborScale(dst *image.NRGBA, src image.Image) {
+	dstB := dst.Bounds()
+	srcB := src.Bounds()
+	dw, dh := dstB.Dx(), dstB.Dy()
+	sw, sh := srcB.Dx(), srcB.Dy()
+	for y := 0; y < dh; y++ {
+		sy := srcB.Min.Y + y*sh/dh
+		for x := 0; x < dw; x++ {
+			sx := srcB.Min.X + x*sw/dw
+			dst.Set(dstB.Min.X+x, dstB.Min.Y+y, src.At(sx, sy))
+		}
+	}
 }
 
 // convertTilesConcurrent decodes PAA tiles to PNG using a worker pool.
@@ -167,28 +199,35 @@ func convertTilesConcurrent(ctx context.Context, paaPaths []string, pngDir strin
 	return tiles, nil
 }
 
-type vrtData struct {
-	Width  int
-	Height int
-	Tiles  []SatTile
-	MaxY   int
-}
+// metersPerDegree is the number of meters per degree of longitude at the equator.
+// Must match METERS_PER_DEGREE in static/scripts/ocap.js.
+const metersPerDegree = 111320
 
-func (v vrtData) DstXOff(x int) int { return x * 512 }
-func (v vrtData) DstYOff(y int) int { return (v.MaxY - y) * 512 }
+// tileRawSize is the decoded pixel size of Arma satellite PAA tiles.
+const tileRawSize = 512
 
-// BuildVRT creates a GDAL VRT file referencing the given tiles.
-// The VRT uses relative paths and applies Y-flip so tile (0,0) is at the bottom.
-func BuildVRT(vrtPath string, tiles []SatTile, imageWidth, imageHeight int) error {
+// tileOverlap is the number of pixels each Arma satellite tile overlaps
+// with its adjacent neighbors. Arma Terrain Builder adds overlap so that
+// in-engine texture sampling can blend across tile boundaries. For web map
+// tiles this overlap must be removed to avoid visible duplication.
+// Measured empirically: 32px for Altis (512px tiles, 30720m world).
+const tileOverlap = 32
+
+// tileEffective is the unique (non-overlapping) pixel size per tile.
+const tileEffective = tileRawSize - tileOverlap // 480
+
+// BuildVRT creates a georeferenced GDAL VRT file from decoded satellite tiles.
+//
+// Georeferencing: the VRT is placed at the equator in EPSG:4326 so that Arma
+// meters map to degrees via metersPerDegree, matching the frontend armaToLatLng().
+//
+// Orientation: Arma satellite tile Y=0 is the northern row (standard raster convention).
+// The VRT uses a north-up GeoTransform (origin at top-left = northwest corner,
+// latitude decreasing downward) so that tile Y=0 maps to the highest latitude
+// (north), matching the frontend where north = high latitude values.
+func BuildVRT(vrtPath string, tiles []SatTile, imageWidth, imageHeight, worldSize int) error {
 	if len(tiles) == 0 {
 		return fmt.Errorf("no tiles to build VRT from")
-	}
-
-	v := vrtData{Width: imageWidth, Height: imageHeight}
-	for _, t := range tiles {
-		if t.Y > v.MaxY {
-			v.MaxY = t.Y
-		}
 	}
 
 	// Make PNGPath relative to VRT file location
@@ -199,7 +238,7 @@ func BuildVRT(vrtPath string, tiles []SatTile, imageWidth, imageHeight int) erro
 		if err != nil {
 			rel = t.PNGPath
 		}
-		relTiles[i] = SatTile{X: t.X, Y: t.Y, PNGPath: rel}
+		relTiles[i] = SatTile{X: t.X, Y: t.Y, Width: t.Width, Height: t.Height, PNGPath: rel}
 	}
 
 	f, err := os.Create(vrtPath)
@@ -208,7 +247,18 @@ func BuildVRT(vrtPath string, tiles []SatTile, imageWidth, imageHeight int) erro
 	}
 	defer f.Close()
 
-	fmt.Fprintf(f, "<VRTDataset rasterXSize=\"%d\" rasterYSize=\"%d\">\n", v.Width, v.Height)
+	fmt.Fprintf(f, "<VRTDataset rasterXSize=\"%d\" rasterYSize=\"%d\">\n", imageWidth, imageHeight)
+
+	// North-up GeoTransform: origin at (lon=0, lat=worldSizeDeg), latitude decreases downward.
+	// Row 0 (tile Y=0, north) → lat = worldSizeDeg
+	// Last row (tile Y=max, south) → lat = 0
+	// This matches the frontend: armaToLatLng(0,worldSize) → high lat (north).
+	worldSizeDeg := float64(worldSize) / float64(metersPerDegree)
+	pixelSizeX := worldSizeDeg / float64(imageWidth)
+	pixelSizeY := worldSizeDeg / float64(imageHeight)
+	fmt.Fprintf(f, "  <SRS>EPSG:4326</SRS>\n")
+	fmt.Fprintf(f, "  <GeoTransform>%.15e, %.15e, 0, %.15e, 0, -%.15e</GeoTransform>\n",
+		0.0, pixelSizeX, worldSizeDeg, pixelSizeY)
 
 	bands := []struct {
 		num   int
@@ -222,9 +272,9 @@ func BuildVRT(vrtPath string, tiles []SatTile, imageWidth, imageHeight int) erro
 			fmt.Fprintf(f, "    <SimpleSource>\n")
 			fmt.Fprintf(f, "      <SourceFilename relativeToVRT=\"1\">%s</SourceFilename>\n", t.PNGPath)
 			fmt.Fprintf(f, "      <SourceBand>%d</SourceBand>\n", band.num)
-			fmt.Fprintf(f, "      <SrcRect xOff=\"0\" yOff=\"0\" xSize=\"512\" ySize=\"512\" />\n")
-			fmt.Fprintf(f, "      <DstRect xOff=\"%d\" yOff=\"%d\" xSize=\"512\" ySize=\"512\" />\n",
-				v.DstXOff(t.X), v.DstYOff(t.Y))
+			fmt.Fprintf(f, "      <SrcRect xOff=\"0\" yOff=\"0\" xSize=\"%d\" ySize=\"%d\" />\n", tileEffective, tileEffective)
+			fmt.Fprintf(f, "      <DstRect xOff=\"%d\" yOff=\"%d\" xSize=\"%d\" ySize=\"%d\" />\n",
+				t.X*tileEffective, t.Y*tileEffective, tileEffective, tileEffective)
 			fmt.Fprintf(f, "    </SimpleSource>\n")
 		}
 		fmt.Fprintf(f, "  </VRTRasterBand>\n")
@@ -295,21 +345,15 @@ func NewProcessSatelliteStage(tools ToolSet) Stage {
 			log.Printf("Decoded %d satellite tiles to PNG", len(tiles))
 
 			// 6. Build VRT
-			// Image dimensions: (gridMax+1) × 512
-			maxX, maxY := 0, 0
-			for _, t := range tiles {
-				if t.X > maxX {
-					maxX = t.X
-				}
-				if t.Y > maxY {
-					maxY = t.Y
-				}
-			}
-			imageWidth := (maxX + 1) * 512
-			imageHeight := (maxY + 1) * 512
+			// Use worldSize as canvas dimensions (1 pixel = 1 meter).
+			// The satellite grid may be sparse (missing ocean tiles),
+			// so (maxTile+1)*tileEffective < worldSize. Using worldSize
+			// ensures tiles are placed at correct geographic positions.
+			imageWidth := job.WorldSize
+			imageHeight := job.WorldSize
 
 			vrtPath := filepath.Join(job.TempDir, "satellite.vrt")
-			if err := BuildVRT(vrtPath, tiles, imageWidth, imageHeight); err != nil {
+			if err := BuildVRT(vrtPath, tiles, imageWidth, imageHeight, job.WorldSize); err != nil {
 				return fmt.Errorf("build VRT: %w", err)
 			}
 

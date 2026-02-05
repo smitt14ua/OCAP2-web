@@ -14,6 +14,7 @@ type MapMeta struct {
 	WorldName string
 	WorldSize int
 	ImageSize int
+	MinZoom   int
 	MaxZoom   int
 	URLPrefix string // e.g. "images/maps/altis" — prepended to asset paths in JSON
 }
@@ -50,7 +51,7 @@ func GenerateMapJSON(outputDir string, meta MapMeta) error {
 		ImageSize:     meta.ImageSize,
 		Multiplier:    1,
 		MaxZoom:       maxZoom,
-		MinZoom:       0,
+		MinZoom:       meta.MinZoom,
 		MaplibreStyle: assetPath(meta.URLPrefix, "style.json"),
 	}
 
@@ -64,6 +65,12 @@ func GenerateStyleJSON(outputDir string, meta MapMeta) error {
 	}
 	displayName := strings.ToUpper(meta.WorldName[:1]) + meta.WorldName[1:]
 
+	minZoom := meta.MinZoom
+	maxZoom := meta.MaxZoom
+	if maxZoom == 0 {
+		maxZoom = 6
+	}
+
 	doc := styleJSON{
 		Version: 8,
 		Name:    displayName,
@@ -72,6 +79,8 @@ func GenerateStyleJSON(outputDir string, meta MapMeta) error {
 				"type":     "raster",
 				"url":      "pmtiles://" + assetPath(meta.URLPrefix, "topo.pmtiles"),
 				"tileSize": 256,
+				"minzoom":  minZoom,
+				"maxzoom":  maxZoom,
 			},
 		},
 		Layers: []interface{}{
@@ -114,6 +123,8 @@ func NewGenerateMetadataStage() Stage {
 				WorldName: job.WorldName,
 				WorldSize: job.WorldSize,
 				ImageSize: job.ImageSize,
+				MinZoom:   job.MinZoom,
+				MaxZoom:   job.MaxZoom,
 				URLPrefix: "images/maps/" + job.WorldName,
 			}
 			if err := GenerateMapJSON(job.OutputDir, meta); err != nil {
