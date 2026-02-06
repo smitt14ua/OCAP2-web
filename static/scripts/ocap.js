@@ -70,6 +70,9 @@ var projectileMarkersLayerGroup = L.layerGroup([]);
 var gridLayer = null;
 var map = null;
 var mapDiv = null;
+var METERS_PER_DEGREE = 111320; // Meters per degree of longitude at the equator
+var useMapLibreMode = false; // true when map has MapLibre style data
+var mapLibreLayer = null;    // reference to MapLibre basemap layer
 var mapBounds = null;
 var worldObject = null;
 var mapAvailable = false;
@@ -358,6 +361,7 @@ async function getWorldByName (worldName) {
 		"hasTopoRelief": false,
 		"hasTopoDark": false,
 		"hasColorRelief": false,
+		"maplibreStyle": null,
 		"attribution": "Bohemia Interactive and 3rd Party Developers"
 	};
 
@@ -432,61 +436,88 @@ function initMap (world) {
 	imageSize = world.imageSize;
 	multiplier = world.multiplier;
 
-	var factorx = multiplier;
-	var factory = multiplier;
-	// var factorx = 1;
-	// var factory = 1;
+	useMapLibreMode = Boolean(world.maplibreStyle);
+	console.log("[OCAP] Map mode:", useMapLibreMode ? "MapLibre + PMTiles" : "Legacy raster tiles");
 
-	L.CRS.OCAP = L.extend({}, L.CRS.Simple, {
-		projection: L.Projection.LonLat,
-		transformation: new L.Transformation(factorx, 0, -factory, 0),
-		// Changing the transformation is the key part, everything else is the same.
-		// By specifying a factor, you specify what distance in meters one pixel occupies (as it still is CRS.Simple in all other regards).
-		// In this case, I have a tile layer with 256px pieces, so Leaflet thinks it's only 256 meters wide.
-		// I know the map is supposed to be 2048x2048 meters, so I specify a factor of 0.125 to multiply in both directions.
-		// In the actual project, I compute all that from the gdal2tiles tilemapresources.xml, 
-		// which gives the necessary information about tilesizes, total bounds and units-per-pixel at different levels.
+	var mapOptions;
+
+	if (useMapLibreMode) {
+		// EPSG:3857 mode for MapLibre GL basemap
+		var worldSizeDeg = world.worldSize / METERS_PER_DEGREE;
+		mapOptions = {
+			center: [worldSizeDeg / 2, worldSizeDeg / 2],
+			zoom: 12,
+			maxZoom: 20,
+			minZoom: 10,
+			zoomControl: false,
+			scrollWheelZoom: true,
+			zoomAnimation: true,
+			fadeAnimation: true,
+			crs: L.CRS.EPSG3857,
+			attributionControl: true,
+			zoomSnap: 1,
+			zoomDelta: 1,
+			closePopupOnClick: false,
+			preferCanvas: true
+		};
+	} else {
+		// Legacy mode: custom OCAP CRS for raster tiles
+		var factorx = multiplier;
+		var factory = multiplier;
+
+		L.CRS.OCAP = L.extend({}, L.CRS.Simple, {
+			projection: L.Projection.LonLat,
+			transformation: new L.Transformation(factorx, 0, -factory, 0),
+			// Changing the transformation is the key part, everything else is the same.
+			// By specifying a factor, you specify what distance in meters one pixel occupies (as it still is CRS.Simple in all other regards).
+			// In this case, I have a tile layer with 256px pieces, so Leaflet thinks it's only 256 meters wide.
+			// I know the map is supposed to be 2048x2048 meters, so I specify a factor of 0.125 to multiply in both directions.
+			// In the actual project, I compute all that from the gdal2tiles tilemapresources.xml,
+			// which gives the necessary information about tilesizes, total bounds and units-per-pixel at different levels.
 
 
-		// Scale, zoom and distance are entirely unchanged from CRS.Simple
-		scale: function (zoom) {
-			return Math.pow(2, zoom);
-		},
+			// Scale, zoom and distance are entirely unchanged from CRS.Simple
+			scale: function (zoom) {
+				return Math.pow(2, zoom);
+			},
 
-		zoom: function (scale) {
-			return Math.log(scale) / Math.LN2;
-		},
+			zoom: function (scale) {
+				return Math.log(scale) / Math.LN2;
+			},
 
-		distance: function (latlng1, latlng2) {
-			var dx = latlng2.lng - latlng1.lng,
-				dy = latlng2.lat - latlng1.lat;
+			distance: function (latlng1, latlng2) {
+				var dx = latlng2.lng - latlng1.lng,
+					dy = latlng2.lat - latlng1.lat;
 
-			// Multiply by 2^mapMaxNativeZoom to convert from CRS units to meters
-			return Math.sqrt(dx * dx + dy * dy) * Math.pow(2, mapMaxNativeZoom);
-		},
-		infinite: true
-	});
+				// Multiply by 2^mapMaxNativeZoom to convert from CRS units to meters
+				return Math.sqrt(dx * dx + dy * dy) * Math.pow(2, mapMaxNativeZoom);
+			},
+			infinite: true
+		});
+
+		mapOptions = {
+			center: [0, 0],
+			zoom: 0,
+			maxNativeZoom: mapMaxNativeZoom,
+			maxZoom: mapMaxZoom,
+			minNativeZoom: 0,
+			minZoom: 0,
+			// zoominfoControl: true, // moved for custom position
+			zoomControl: false,
+			scrollWheelZoom: true,
+			zoomAnimation: true,
+			fadeAnimation: true,
+			crs: L.CRS.OCAP,
+			attributionControl: true,
+			zoomSnap: 1,
+			zoomDelta: 1,
+			closePopupOnClick: false,
+			preferCanvas: true
+		};
+	}
 
 	// Create map
-	map = L.map('map', {
-		center: [0, 0],
-		zoom: 0,
-		maxNativeZoom: mapMaxNativeZoom,
-		maxZoom: mapMaxZoom,
-		minNativeZoom: 0,
-		minZoom: 0,
-		// zoominfoControl: true, // moved for custom position
-		zoomControl: false,
-		scrollWheelZoom: true,
-		zoomAnimation: true,
-		fadeAnimation: true,
-		crs: L.CRS.OCAP,
-		attributionControl: true,
-		zoomSnap: 1,
-		zoomDelta: 1,
-		closePopupOnClick: false,
-		preferCanvas: true
-	});
+	map = L.map('map', mapOptions);
 
 	// Create SVG renderer for shapes that need pattern fills (Canvas doesn't support SVG patterns)
 	window.svgRenderer = L.svg();
@@ -495,7 +526,8 @@ function initMap (world) {
 
 	// Hide marker popups once below a certain zoom level
 	map.on("zoom", function () {
-		ui.hideMarkerPopups = map.getZoom() <= 4;
+		var hideThreshold = useMapLibreMode ? 14 : 4;
+		ui.hideMarkerPopups = map.getZoom() <= hideThreshold;
 		// if (map.getZoom() <= 5 && geoJsonHouses != null) {
 		// 	geoJsonHouses.setStyle(function (geoJsonFeature) {
 		// 		return {
@@ -551,111 +583,146 @@ function initMap (world) {
 	});
 
 
-	// Setup tile layers
-	var baseLayers = [];
-
+	// Setup layer groups
 	entitiesLayerGroup.addTo(map);
 	markersLayerGroup.addTo(map);
 	systemMarkersLayerGroup.addTo(map);
 	projectileMarkersLayerGroup.addTo(map);
 
+	if (useMapLibreMode) {
+		// Register PMTiles protocol for MapLibre (once)
+		if (!window._pmtilesRegistered) {
+			let pmtilesProtocol = new pmtiles.Protocol();
+			maplibregl.addProtocol("pmtiles", pmtilesProtocol.tile);
+			window._pmtilesRegistered = true;
+			console.log("[OCAP] PMTiles protocol registered");
+		}
+
+		// Resolve saved style preference so we load the correct style directly
+		var styleBase = world.maplibreStyle.replace(/\/[^/]+$/, '/');
+		var styleVariants = ['standard.json', 'satellite.json', 'hybrid.json'];
+		var savedStyleIdx = parseInt(localStorage.getItem('ocap-maplibre-style'), 10) || 0;
+		if (savedStyleIdx < 0 || savedStyleIdx >= styleVariants.length) savedStyleIdx = 0;
+		var initialStyle = styleBase + styleVariants[savedStyleIdx];
+
+		// Add MapLibre basemap layer
+		console.log("[OCAP] Loading MapLibre style:", initialStyle);
+		mapLibreLayer = L.maplibreGL({
+			style: initialStyle,
+			interactive: false,
+			renderWorldCopies: false
+		});
+		mapLibreLayer.addTo(map);
+
+		// Fit map to world bounds
+		var worldSizeDeg = world.worldSize / METERS_PER_DEGREE;
+		map.fitBounds(L.latLngBounds(
+			L.latLng(0, 0),
+			L.latLng(worldSizeDeg, worldSizeDeg)
+		));
+	}
+
 
 	// worldName = world.worldName;
 
+	if (!useMapLibreMode) {
+		// Setup raster tile layers
+		var baseLayers = [];
 
-	let topoLayerUrl = "";
-	let topoDarkLayerUrl = "";
-	let topoReliefLayerUrl = "";
-	let colorReliefLayerUrl = "";
+		let topoLayerUrl = "";
+		let topoDarkLayerUrl = "";
+		let topoReliefLayerUrl = "";
+		let colorReliefLayerUrl = "";
 
 
-	if (worldName === "") {
-		console.log("World name missing or not rendered. Using default map.")
-		// if default map is used as placeholder, use custom topo layer url
-		topoLayerUrl = 'https://maps.ocap2.com/missing_tiles.png';
-	} else if (Boolean(world._useCloudTiles)) {
-		console.log("Streaming map tiles from the cloud (maps.ocap2.com).")
-		topoLayerUrl = ('https://maps.ocap2.com/' + worldName.toLowerCase() + '/{z}/{x}/{y}.png');
-		topoDarkLayerUrl = ('https://maps.ocap2.com/' + worldName.toLowerCase() + '/topoDark/{z}/{x}/{y}.png');
-		topoReliefLayerUrl = ('https://maps.ocap2.com/' + worldName.toLowerCase() + '/topoRelief/{z}/{x}/{y}.png');
-		colorReliefLayerUrl = ('https://maps.ocap2.com/' + worldName.toLowerCase() + '/colorRelief/{z}/{x}/{y}.png');
-	} else {
-		console.log("Streaming map tiles from the local OCAP2 installation.")
-		topoLayerUrl = ('images/maps/' + worldName + '/{z}/{x}/{y}.png');
-		topoDarkLayerUrl = ('images/maps/' + worldName + '/topoDark/{z}/{x}/{y}.png');
-		topoReliefLayerUrl = ('images/maps/' + worldName + '/topoRelief/{z}/{x}/{y}.png');
-		colorReliefLayerUrl = ('images/maps/' + worldName + '/colorRelief/{z}/{x}/{y}.png');
-	}
+		if (worldName === "") {
+			console.log("World name missing or not rendered. Using default map.")
+			// if default map is used as placeholder, use custom topo layer url
+			topoLayerUrl = 'https://maps.ocap2.com/missing_tiles.png';
+		} else if (Boolean(world._useCloudTiles)) {
+			console.log("Streaming map tiles from the cloud (maps.ocap2.com).")
+			topoLayerUrl = ('https://maps.ocap2.com/' + worldName.toLowerCase() + '/{z}/{x}/{y}.png');
+			topoDarkLayerUrl = ('https://maps.ocap2.com/' + worldName.toLowerCase() + '/topoDark/{z}/{x}/{y}.png');
+			topoReliefLayerUrl = ('https://maps.ocap2.com/' + worldName.toLowerCase() + '/topoRelief/{z}/{x}/{y}.png');
+			colorReliefLayerUrl = ('https://maps.ocap2.com/' + worldName.toLowerCase() + '/colorRelief/{z}/{x}/{y}.png');
+		} else {
+			console.log("Streaming map tiles from the local OCAP2 installation.")
+			topoLayerUrl = ('images/maps/' + worldName + '/{z}/{x}/{y}.png');
+			topoDarkLayerUrl = ('images/maps/' + worldName + '/topoDark/{z}/{x}/{y}.png');
+			topoReliefLayerUrl = ('images/maps/' + worldName + '/topoRelief/{z}/{x}/{y}.png');
+			colorReliefLayerUrl = ('images/maps/' + worldName + '/colorRelief/{z}/{x}/{y}.png');
+		}
 
-	console.log("Getting bounds for layers...")
-	mapBounds = getMapImageBounds()
+		console.log("Getting bounds for layers...")
+		mapBounds = getMapImageBounds()
 
-	if (world.hasTopo) {
-		topoLayer = L.tileLayer(topoLayerUrl, {
-			maxNativeZoom: world.maxZoom,
-			// maxZoom: mapMaxZoom,
-			minNativeZoom: world.minZoom,
-			bounds: mapBounds,
-			label: "Topographic",
-			attribution: "Map Data &copy; " + world.attribution,
-			noWrap: true,
-			tms: false,
-			keepBuffer: 4,
-			// opacity: 0.7,
-			errorTileUrl: 'https://maps.ocap2.com/missing_tiles.png'
-		});
-		baseLayers.push(topoLayer);
-	}
+		if (world.hasTopo) {
+			topoLayer = L.tileLayer(topoLayerUrl, {
+				maxNativeZoom: world.maxZoom,
+				// maxZoom: mapMaxZoom,
+				minNativeZoom: world.minZoom,
+				bounds: mapBounds,
+				label: "Topographic",
+				attribution: "Map Data &copy; " + world.attribution,
+				noWrap: true,
+				tms: false,
+				keepBuffer: 4,
+				// opacity: 0.7,
+				errorTileUrl: 'https://maps.ocap2.com/missing_tiles.png'
+			});
+			baseLayers.push(topoLayer);
+		}
 
-	if (world.hasTopoDark) {
-		topoDarkLayer = L.tileLayer(topoDarkLayerUrl, {
-			maxNativeZoom: world.maxZoom,
-			// maxZoom: mapMaxZoom,
-			minNativeZoom: world.minZoom,
-			bounds: mapBounds,
-			label: "Topographic Dark",
-			attribution: "Map Data &copy; " + world.attribution,
-			noWrap: true,
-			tms: false,
-			keepBuffer: 4,
-			// opacity: 0.8,
-			errorTileUrl: 'https://maps.ocap2.com/missing_tiles.png'
-		});
-		baseLayers.push(topoDarkLayer);
-	}
+		if (world.hasTopoDark) {
+			topoDarkLayer = L.tileLayer(topoDarkLayerUrl, {
+				maxNativeZoom: world.maxZoom,
+				// maxZoom: mapMaxZoom,
+				minNativeZoom: world.minZoom,
+				bounds: mapBounds,
+				label: "Topographic Dark",
+				attribution: "Map Data &copy; " + world.attribution,
+				noWrap: true,
+				tms: false,
+				keepBuffer: 4,
+				// opacity: 0.8,
+				errorTileUrl: 'https://maps.ocap2.com/missing_tiles.png'
+			});
+			baseLayers.push(topoDarkLayer);
+		}
 
-	if (world.hasTopoRelief) {
-		topoReliefLayer = L.tileLayer(topoReliefLayerUrl, {
-			maxNativeZoom: world.maxZoom,
-			// maxZoom: mapMaxZoom,
-			minNativeZoom: world.minZoom,
-			bounds: mapBounds,
-			label: "Topographic Relief",
-			attribution: "Map Data &copy; " + world.attribution,
-			noWrap: true,
-			tms: false,
-			keepBuffer: 4,
-			// opacity: 0.9,
-			errorTileUrl: 'https://maps.ocap2.com/missing_tiles.png'
-		});
-		baseLayers.push(topoReliefLayer);
-	}
+		if (world.hasTopoRelief) {
+			topoReliefLayer = L.tileLayer(topoReliefLayerUrl, {
+				maxNativeZoom: world.maxZoom,
+				// maxZoom: mapMaxZoom,
+				minNativeZoom: world.minZoom,
+				bounds: mapBounds,
+				label: "Topographic Relief",
+				attribution: "Map Data &copy; " + world.attribution,
+				noWrap: true,
+				tms: false,
+				keepBuffer: 4,
+				// opacity: 0.9,
+				errorTileUrl: 'https://maps.ocap2.com/missing_tiles.png'
+			});
+			baseLayers.push(topoReliefLayer);
+		}
 
-	if (world.hasColorRelief) {
-		colorReliefLayer = L.tileLayer(colorReliefLayerUrl, {
-			maxNativeZoom: world.maxZoom,
-			// maxZoom: mapMaxZoom,
-			minNativeZoom: world.minZoom,
-			bounds: mapBounds,
-			attribution: "Map Data &copy; " + world.attribution,
-			label: "Colored Relief",
-			noWrap: true,
-			tms: false,
-			keepBuffer: 4,
-			// opacity: 1,
-			errorTileUrl: 'https://maps.ocap2.com/missing_tiles.png'
-		});
-		baseLayers.push(colorReliefLayer);
+		if (world.hasColorRelief) {
+			colorReliefLayer = L.tileLayer(colorReliefLayerUrl, {
+				maxNativeZoom: world.maxZoom,
+				// maxZoom: mapMaxZoom,
+				minNativeZoom: world.minZoom,
+				bounds: mapBounds,
+				attribution: "Map Data &copy; " + world.attribution,
+				label: "Colored Relief",
+				noWrap: true,
+				tms: false,
+				keepBuffer: 4,
+				// opacity: 1,
+				errorTileUrl: 'https://maps.ocap2.com/missing_tiles.png'
+			});
+			baseLayers.push(colorReliefLayer);
+		}
 	}
 
 
@@ -677,16 +744,19 @@ function initMap (world) {
 	});
 	overlayLayerControl.addTo(map);
 
-
-	baseLayerControl = L.control.basemaps({
-		basemaps: baseLayers,
-		tileX: 2,  // tile X coordinate
-		tileY: 6,  // tile Y coordinate
-		tileZ: 4   // tile zoom level
-	}, {
-		position: 'bottomright',
-	});
-	baseLayerControl.addTo(map);
+	if (useMapLibreMode) {
+		L.control.maplibreStyles(mapLibreLayer, world.maplibreStyle).addTo(map);
+	} else {
+		baseLayerControl = L.control.basemaps({
+			basemaps: baseLayers,
+			tileX: 2,  // tile X coordinate
+			tileY: 6,  // tile Y coordinate
+			tileZ: 4   // tile zoom level
+		}, {
+			position: 'bottomright',
+		});
+		baseLayerControl.addTo(map);
+	}
 
 
 	// Add zoom control
@@ -706,13 +776,13 @@ function initMap (world) {
 	function test () {
 		// Add marker to map on click
 		map.on("click", function (e) {
-			// latLng, layerPoint, containerPoint, originalEvent
-			console.debug("latLng");
-			console.debug(e.latlng);
-			console.debug("LayerPoint");
-			console.debug(e.layerPoint);
-			console.debug("Projected");
-			console.debug(map.project(e.latlng, mapMaxNativeZoom));
+			console.debug("latLng", e.latlng);
+			console.debug("LayerPoint", e.layerPoint);
+			if (useMapLibreMode) {
+				console.debug("Arma coords", [e.latlng.lng * METERS_PER_DEGREE, e.latlng.lat * METERS_PER_DEGREE]);
+			} else {
+				console.debug("Projected", map.project(e.latlng, mapMaxNativeZoom));
+			}
 		})
 	}
 
@@ -842,6 +912,15 @@ function createInitialMarkers () {
 }
 
 function getMapImageBounds () {
+	if (useMapLibreMode) {
+		var worldSizeDeg = worldObject.worldSize / METERS_PER_DEGREE;
+		mapBounds = L.latLngBounds(
+			L.latLng(0, 0),
+			L.latLng(worldSizeDeg, worldSizeDeg)
+		);
+		return mapBounds;
+	}
+	// Legacy mode (existing code unchanged)
 	console.debug("Calculating map bounds from map image size");
 	mapBounds = new L.LatLngBounds(
 		map.unproject([0, worldObject.imageSize], mapMaxNativeZoom),
@@ -968,6 +1047,12 @@ function goFullscreen () {
 // http://127.0.0.1:5000/?file=2021_08_20__21_24_FNF_TheMountain_Youre_A_Towel_V2_Destroy_EU.json&frame=87&zoom=1&x=-134.6690319189602&y=78.0822715759277
 // Converts Arma coordinates [x,y] to LatLng
 function armaToLatLng (coords) {
+	if (useMapLibreMode) {
+		// EPSG:3857 mode: convert meters to degrees (near equator, 1° ≈ 111320m)
+		// Arma Y axis is north, X axis is east — maps to lat/lng directly
+		return L.latLng(coords[1] / METERS_PER_DEGREE, coords[0] / METERS_PER_DEGREE);
+	}
+	// Legacy mode: pixel-based projection
 	var pixelCoords;
 	pixelCoords = [(coords[0] * multiplier) + trim, (imageSize - (coords[1] * multiplier)) + trim];
 	return map.unproject(pixelCoords, mapMaxNativeZoom);
