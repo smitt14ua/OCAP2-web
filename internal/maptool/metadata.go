@@ -112,6 +112,11 @@ func NewGenerateStylesStage() Stage {
 				}
 			}
 
+			glyphsURL := "../fonts/{fontstack}/{range}.pbf"
+			if job.SubDirs {
+				glyphsURL = "../../fonts/{fontstack}/{range}.pbf"
+			}
+
 			styleCfg := StyleConfig{
 				WorldName:      worldName,
 				URLPrefix:      tilesPrefix,
@@ -120,6 +125,7 @@ func NewGenerateStylesStage() Stage {
 				HasHeightmap:   job.HasHeightmap,
 				HasHillshade:   job.HasHillshade,
 				HasColorRelief: job.HasColorRelief,
+				GlyphsURL:      glyphsURL,
 			}
 
 			variants := []struct {
