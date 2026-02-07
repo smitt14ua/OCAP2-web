@@ -112,14 +112,17 @@ func NewGenerateStylesStage() Stage {
 				}
 			}
 
+			spritePrefix := "images/maps/" + worldName
 			glyphsURL := "../fonts/{fontstack}/{range}.pbf"
 			if job.SubDirs {
+				spritePrefix = "images/maps/" + worldName + "/styles"
 				glyphsURL = "../../fonts/{fontstack}/{range}.pbf"
 			}
 
 			styleCfg := StyleConfig{
 				WorldName:      worldName,
 				URLPrefix:      tilesPrefix,
+				SpritePrefix:   spritePrefix,
 				VectorLayers:   job.VectorLayers,
 				HasSatellite:   true,
 				HasHeightmap:   job.HasHeightmap,
@@ -146,6 +149,10 @@ func NewGenerateStylesStage() Stage {
 				}
 			}
 			job.HasMaplibre = true
+
+			if err := WriteSpriteFiles(stylesDir); err != nil {
+				return fmt.Errorf("write sprites: %w", err)
+			}
 
 			return nil
 		},
