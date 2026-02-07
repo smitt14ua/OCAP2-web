@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -16,6 +15,12 @@ import (
 type geoJSONSource struct {
 	Name string // layer name (filename without .geojson.gz)
 	Path string // full path to .geojson.gz file
+}
+
+// layerNameAliases maps grad_meh layer names to canonical names used in styles.
+// Some grad_meh versions use different names for the same feature.
+var layerNameAliases = map[string]string{
+	"mounts": "mount",
 }
 
 // DiscoverGeoJSONLayers scans a grad_meh export directory for GeoJSON layers.
@@ -216,13 +221,26 @@ func NewProcessGeoJSONStage() Stage {
 					log.Printf("Skipping bush layer (too dense for vector tiles)")
 					continue
 				}
-				outPath := filepath.Join(tmpDir, src.Name+".geojson")
+				// Normalize layer names (e.g. "mounts" → "mount")
+				name := src.Name
+				if canonical, ok := layerNameAliases[name]; ok {
+					log.Printf("Renaming layer %s → %s", name, canonical)
+					name = canonical
+				}
+				outPath := filepath.Join(tmpDir, name+".geojson")
 				if err := ProcessGeoJSONGz(src.Path, outPath); err != nil {
-					log.Printf("WARNING: skipping layer %s: %v", src.Name, err)
+					log.Printf("WARNING: skipping layer %s: %v", name, err)
 					continue
 				}
-				layerFiles = append(layerFiles, LayerFile{Name: src.Name, Path: outPath})
-				layerNames = append(layerNames, src.Name)
+				layerFiles = append(layerFiles, LayerFile{Name: name, Path: outPath})
+				layerNames = append(layerNames, name)
+			}
+
+			// Add sea polygon file if available (from generate_contours stage)
+			if job.SeaFile != "" {
+				layerFiles = append(layerFiles, LayerFile{Name: "sea", Path: job.SeaFile})
+				layerNames = append(layerNames, "sea")
+				log.Printf("Added sea polygon layer from DEM")
 			}
 
 			// Add GDAL contour files if available (from generate_contours stage)
@@ -315,10 +333,7 @@ func NewGradMehVectorTilesStage(tools ToolSet) Stage {
 					}
 
 					log.Printf("tippecanoe: processing layer %s", lf.Name)
-					cmd := exec.CommandContext(ctx, tippeTool.Path, args...)
-					cmd.Stdout = os.Stdout
-					cmd.Stderr = os.Stderr
-					if err := cmd.Run(); err != nil {
+					if err := runCmd(ctx, tippeTool.Path, args...); err != nil {
 						log.Printf("WARNING: tippecanoe failed for layer %s: %v", lf.Name, err)
 						continue
 					}
@@ -338,10 +353,7 @@ func NewGradMehVectorTilesStage(tools ToolSet) Stage {
 				joinArgs = append(joinArgs, mbtilesFiles...)
 
 				log.Printf("tile-join: merging %d layers", len(mbtilesFiles))
-				cmd := exec.CommandContext(ctx, tileJoin.Path, joinArgs...)
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				joinErr := cmd.Run()
+				joinErr := runCmd(ctx, tileJoin.Path, joinArgs...)
 				if joinErr == nil {
 					// Convert to PMTiles
 					outputPath := filepath.Join(job.TilesOutputDir(), "features.pmtiles")
@@ -372,10 +384,7 @@ func NewGradMehVectorTilesStage(tools ToolSet) Stage {
 				}
 
 				log.Printf("Running tippecanoe with %d layers (single pass)", len(job.LayerFiles))
-				cmd := exec.CommandContext(ctx, tippeTool.Path, args...)
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				if err := cmd.Run(); err != nil {
+				if err := runCmd(ctx, tippeTool.Path, args...); err != nil {
 					return fmt.Errorf("tippecanoe: %w", err)
 				}
 
