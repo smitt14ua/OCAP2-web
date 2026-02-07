@@ -2,6 +2,19 @@ package maptool
 
 import "sort"
 
+const (
+	// arma3SeaColor matches Arma 3's colorSea {0.56, 0.8, 0.98, 0.5}.
+	arma3SeaColor = "#8FCCFA"
+	// arma3SeaColorDark is a darkened variant for the topo-dark theme.
+	arma3SeaColorDark = "#3a6a9c"
+	// arma3UnderwaterContour is the contour line color for negative elevations.
+	arma3UnderwaterContour = "#4A8BBF"
+	// landColor is the base terrain fill for light style variants.
+	landColor = "#DFDFDF"
+	// landColorDark is the base terrain fill for the topo-dark variant.
+	landColorDark = "#2a2a2a"
+)
+
 // LayerStyle defines a MapLibre GL style layer for a vector tile layer.
 type LayerStyle struct {
 	ID          string
@@ -45,18 +58,18 @@ func contourColorExpr(landColor string) interface{} {
 	return []interface{}{
 		"case",
 		[]interface{}{"<", []interface{}{"get", "elevation"}, 0.0},
-		"#1B4F8A",
+		arma3UnderwaterContour,
 		landColor,
 	}
 }
 
 // topoContourColorExpr returns a case expression for topo-style contours.
-// Uses #1B4F8A for underwater (elevation <= 0) and #D1BA94 for land.
+// Uses arma3UnderwaterContour for underwater (elevation <= 0) and #D1BA94 for land.
 func topoContourColorExpr() interface{} {
 	return []interface{}{
 		"case",
 		[]interface{}{"<=", []interface{}{"get", "elevation"}, 0.0},
-		"#1B4F8A",
+		arma3UnderwaterContour,
 		"#D1BA94",
 	}
 }
@@ -84,12 +97,12 @@ func topoTextPaint(color string) map[string]interface{} {
 }
 
 // topoDarkContourColorExpr returns a case expression for topo-dark contours.
-// Uses #1B4F8A for underwater (elevation <= 0) and #5a4a3a for land.
+// Uses arma3UnderwaterContour for underwater (elevation <= 0) and #5a4a3a for land.
 func topoDarkContourColorExpr() interface{} {
 	return []interface{}{
 		"case",
 		[]interface{}{"<=", []interface{}{"get", "elevation"}, 0.0},
-		"#1B4F8A",
+		arma3UnderwaterContour,
 		"#5a4a3a",
 	}
 }
@@ -187,11 +200,11 @@ var knownLayerStyles = map[string][]LayerStyle{
 	"sea": {{
 		ID: "sea-land", Type: "fill", SourceLayer: "sea", MinZoom: 8,
 		Filter: []interface{}{">", []interface{}{"get", "ELEV_MAX"}, 0.0},
-		Paint:  map[string]interface{}{"fill-color": "#DFDFDF", "fill-opacity": 1.0, "fill-antialias": true},
+		Paint:  map[string]interface{}{"fill-color": landColor, "fill-opacity": 1.0, "fill-antialias": true},
 	}, {
 		ID: "sea-water", Type: "fill", SourceLayer: "sea", MinZoom: 8,
 		Filter: []interface{}{"<=", []interface{}{"get", "ELEV_MAX"}, 0.0},
-		Paint:  map[string]interface{}{"fill-color": "#b7cbe6", "fill-opacity": 1.0, "fill-antialias": false},
+		Paint:  map[string]interface{}{"fill-color": arma3SeaColor, "fill-opacity": 0.5, "fill-antialias": false},
 	}},
 	"rocks": {{
 		ID: "rocks", Type: "fill", SourceLayer: "rocks", MinZoom: 16,
@@ -935,7 +948,7 @@ func GenerateStyleDocument(cfg StyleConfig, variant StyleVariant) map[string]int
 	bgColor := "#000000"
 	switch variant {
 	case StyleTopo:
-		bgColor = "#DFDFDF"
+		bgColor = landColor
 	case StyleTopoDark:
 		bgColor = "#1B1B1B"
 	}
@@ -1084,7 +1097,7 @@ func buildTopoLayers(cfg StyleConfig) []interface{} {
 	// Land/sea fills — rendered immediately after background so everything
 	// else draws on top. Land provides the base terrain color; sea fills oceans.
 	if hasVectorLayer(cfg.VectorLayers, "sea") {
-		layers = append(layers, buildLandSeaLayers("#DFDFDF", "#36B")...)
+		layers = append(layers, buildLandSeaLayers(landColor, arma3SeaColor)...)
 	}
 
 	// Satellite (hidden by default, allows layer toggle in UI)
@@ -1204,7 +1217,7 @@ func buildTopoDarkLayers(cfg StyleConfig) []interface{} {
 
 	// Land/sea fills — dark variants
 	if hasVectorLayer(cfg.VectorLayers, "sea") {
-		layers = append(layers, buildLandSeaLayers("#2a2a2a", "#1a3a5c")...)
+		layers = append(layers, buildLandSeaLayers(landColorDark, arma3SeaColorDark)...)
 	}
 
 	// Satellite (hidden by default, allows layer toggle in UI)
