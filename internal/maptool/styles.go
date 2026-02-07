@@ -45,18 +45,18 @@ func contourColorExpr(landColor string) interface{} {
 	return []interface{}{
 		"case",
 		[]interface{}{"<", []interface{}{"get", "elevation"}, 0.0},
-		"#a2b5ce",
+		"#1B4F8A",
 		landColor,
 	}
 }
 
 // topoContourColorExpr returns a case expression for topo-style contours.
-// Uses #80C3FF for underwater (elevation <= 0) and #D1BA94 for land.
+// Uses #1B4F8A for underwater (elevation <= 0) and #D1BA94 for land.
 func topoContourColorExpr() interface{} {
 	return []interface{}{
 		"case",
 		[]interface{}{"<=", []interface{}{"get", "elevation"}, 0.0},
-		"#80C3FF",
+		"#1B4F8A",
 		"#D1BA94",
 	}
 }
@@ -84,12 +84,12 @@ func topoTextPaint(color string) map[string]interface{} {
 }
 
 // topoDarkContourColorExpr returns a case expression for topo-dark contours.
-// Uses #3a5a7a for underwater (elevation <= 0) and #5a4a3a for land.
+// Uses #1B4F8A for underwater (elevation <= 0) and #5a4a3a for land.
 func topoDarkContourColorExpr() interface{} {
 	return []interface{}{
 		"case",
 		[]interface{}{"<=", []interface{}{"get", "elevation"}, 0.0},
-		"#3a5a7a",
+		"#1B4F8A",
 		"#5a4a3a",
 	}
 }
@@ -420,8 +420,7 @@ var knownLayerStyles = map[string][]LayerStyle{
 
 	// --- Object symbols ---
 	"rock":        {makeIconStyle("rock", "objects/rock", 16)},
-	"bush":        {makeIconStyle("bush", "objects/bush", 16)},
-	"tree":        {makeIconStyle("tree", "objects/tree", 16)},
+	"tree":        makeTreeCircleStyle("#5CA05C"),
 	"chapel":      {makeIconStyle("chapel", "objects/chapel", 15)},
 	"church":      {makeIconStyle("church", "objects/church", 15)},
 	"cross":       {makeIconStyle("cross", "objects/cross", 15)},
@@ -562,11 +561,6 @@ var knownLayerStyles = map[string][]LayerStyle{
 		},
 	}},
 
-	// --- Vegetation symbols ---
-	"vegetationbroadleaf": {makeVegetationStyle("vegetationbroadleaf", "locations/vegetationbroadleaf", 0.5)},
-	"vegetationfir":       {makeVegetationStyle("vegetationfir", "locations/vegetationfir", 0.3)},
-	"vegetationpalm":      {makeVegetationStyle("vegetationpalm", "locations/vegetationpalm", 0.3)},
-	"vegetationvineyard":  {makeVegetationStyle("vegetationvineyard", "locations/vegetationvineyard", 0.3)},
 }
 
 func makeIconStyle(name, iconImage string, minZoom int) LayerStyle {
@@ -596,21 +590,17 @@ func makeLabelStyle(name, color string, minZoom int) LayerStyle {
 	}
 }
 
-func makeVegetationStyle(name, iconImage string, iconSize float64) LayerStyle {
-	return LayerStyle{
-		ID: name, Type: "symbol", SourceLayer: name, MinZoom: 12,
-		Layout: map[string]interface{}{
-			"icon-image":  iconImage,
-			"icon-size":   iconSize,
-			"icon-anchor": "center",
-			"text-field":  []interface{}{"get", "name"},
-			"text-font":   []interface{}{"OpenSans-Regular"},
-			"text-anchor": "left",
-			"text-size":   []interface{}{"interpolate", []interface{}{"linear"}, []interface{}{"zoom"}, 12.0, 5.0, 16.0, 20.0},
-			"text-offset": []interface{}{1.0, 0.0},
+func makeTreeCircleStyle(strokeColor string) []LayerStyle {
+	return []LayerStyle{{
+		ID: "tree", Type: "circle", SourceLayer: "tree", MinZoom: 15,
+		Paint: map[string]interface{}{
+			"circle-radius":       []interface{}{"interpolate", []interface{}{"linear"}, []interface{}{"zoom"}, 15.0, 3.0, 18.0, 6.0, 20.0, 10.0},
+			"circle-color":        "transparent",
+			"circle-stroke-color": strokeColor,
+			"circle-stroke-width": 1.5,
+			"circle-opacity":      0.7,
 		},
-		Paint: map[string]interface{}{"text-color": "#406633", "text-opacity": 1.0},
-	}
+	}}
 }
 
 func makeTopoLabel(name, color string) LayerStyle {
@@ -714,9 +704,8 @@ var knownTopoLayerStyles = map[string][]LayerStyle{
 			"line-color": "#808080", "line-opacity": 1.0, "line-width": 1.0,
 		},
 	}},
-	"bush":        {makeTopoSymbol("bush", "objects/bush", 0.125, true)},
 	"rock":        {makeTopoSymbol("rock", "objects/rock", 0.125, true)},
-	"tree":        {makeTopoSymbol("tree", "objects/tree", 0.25, true)},
+	"tree":        makeTreeCircleStyle("#5CA05C"),
 	"fuelstation": {makeTopoSymbol("fuelstation", "objects/fuelstation", 0.125, false)},
 	"transmitter": {makeTopoSymbol("transmitter", "objects/transmitter", 0.125, false)},
 	"stack":       {makeTopoSymbol("stack", "objects/stack", 0.125, false)},
@@ -768,7 +757,7 @@ var topoLayerOrder = []string{
 	"forest", "rocks",
 	"house",
 	"powerline", "runway",
-	"bush", "rock", "tree",
+	"rock", "tree",
 	"fuelstation", "transmitter", "stack",
 	"strongpointarea", "flatarea", "flatareacitysmall",
 	"mount", "airport", "fortress", "viewpoint", "bordercrossing",
@@ -871,9 +860,8 @@ var knownTopoDarkLayerStyles = map[string][]LayerStyle{
 			"line-color": "#555555", "line-opacity": 1.0, "line-width": 1.0,
 		},
 	}},
-	"bush":        {makeTopoSymbol("bush", "objects/bush", 0.125, true)},
 	"rock":        {makeTopoSymbol("rock", "objects/rock", 0.125, true)},
-	"tree":        {makeTopoSymbol("tree", "objects/tree", 0.25, true)},
+	"tree":        makeTreeCircleStyle("#6BBF6B"),
 	"fuelstation": {makeTopoSymbol("fuelstation", "objects/fuelstation", 0.125, false)},
 	"transmitter": {makeTopoSymbol("transmitter", "objects/transmitter", 0.125, false)},
 	"stack":       {makeTopoSymbol("stack", "objects/stack", 0.125, false)},
@@ -1376,8 +1364,7 @@ func categorizeLayer(name string) string {
 		return "powerline"
 	case "contours", "contours05", "contours10", "contours50", "contours100":
 		return "contours"
-	case "tree", "bush",
-		"vegetationbroadleaf", "vegetationfir", "vegetationpalm", "vegetationvineyard":
+	case "tree":
 		return "vegetation"
 	case "hill", "namemarine", "namelocal", "namevillage", "namecity",
 		"namecitycapital", "citycenter",
