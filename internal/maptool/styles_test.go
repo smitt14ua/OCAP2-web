@@ -98,14 +98,6 @@ func TestIsLayerVisible_SeaPartial(t *testing.T) {
 	assert.False(t, isLayerVisible("sea", neither))
 }
 
-func TestIsLayerVisible_SatelliteVariant(t *testing.T) {
-	// Satellite mode: no forest, no vegetation, no land
-	assert.False(t, isLayerVisible("forest", layerVisSatellite))
-	assert.False(t, isLayerVisible("tree", layerVisSatellite))
-	assert.True(t, isLayerVisible("road", layerVisSatellite))
-	assert.True(t, isLayerVisible("namecity", layerVisSatellite))
-}
-
 func TestGetLayerStyles_Known(t *testing.T) {
 	styles := GetLayerStyles("road")
 	require.Len(t, styles, 2, "road should have outline + fill")
@@ -237,7 +229,7 @@ func TestGenerateStyleDocument_Variants(t *testing.T) {
 		HasHillshade: true,
 	}
 
-	for _, variant := range []StyleVariant{StyleColorRelief, StyleTopo, StyleTopoDark, StyleTopoRelief, StyleSatellite, StyleHybrid} {
+	for _, variant := range []StyleVariant{StyleColorRelief, StyleTopo, StyleTopoDark, StyleTopoRelief} {
 		t.Run(string(variant), func(t *testing.T) {
 			doc := GenerateStyleDocument(cfg, variant)
 			assert.Equal(t, "stratis-"+string(variant), doc["name"])
@@ -252,14 +244,14 @@ func TestGenerateStyleDocument_Variants(t *testing.T) {
 
 func TestGenerateStyleDocument_Sources(t *testing.T) {
 	cfg := StyleConfig{
-		WorldName:        "altis",
-		URLPrefix:        "images/maps/altis",
-		VectorLayers:     []string{"sea"},
-		HasSatellite:     true,
-		HasHeightmap:     true,
-		HasHillshade:     true,
-		HasBathymetry:    true,
-		HasColorRelief:   true,
+		WorldName:      "altis",
+		URLPrefix:      "images/maps/altis",
+		VectorLayers:   []string{"sea"},
+		HasSatellite:   true,
+		HasHeightmap:   true,
+		HasHillshade:   true,
+		HasBathymetry:  true,
+		HasColorRelief: true,
 	}
 
 	// Color-relief references: features, color-relief, hillshade, satellite — but NOT heightmap or bathymetry
@@ -294,14 +286,14 @@ func TestGenerateStyleDocument_NoOptionalSources(t *testing.T) {
 
 func TestGenerateStyleDocument_SourcesPerVariant(t *testing.T) {
 	cfg := StyleConfig{
-		WorldName:        "test",
-		URLPrefix:        "images/maps/test",
-		VectorLayers:     []string{"sea", "road"},
-		HasSatellite:     true,
-		HasHeightmap:     true,
-		HasHillshade:     true,
-		HasBathymetry:    true,
-		HasColorRelief:   true,
+		WorldName:      "test",
+		URLPrefix:      "images/maps/test",
+		VectorLayers:   []string{"sea", "road"},
+		HasSatellite:   true,
+		HasHeightmap:   true,
+		HasHillshade:   true,
+		HasBathymetry:  true,
+		HasColorRelief: true,
 	}
 
 	getSources := func(variant StyleVariant) map[string]interface{} {
@@ -314,11 +306,9 @@ func TestGenerateStyleDocument_SourcesPerVariant(t *testing.T) {
 		expected []string
 		banned   []string
 	}{
-		{StyleTopo, []string{"features", "heightmap", "satellite"}, []string{"color-relief", "bathymetry"}},
-		{StyleTopoDark, []string{"features", "heightmap", "satellite"}, []string{"color-relief", "bathymetry"}},
+		{StyleTopo, []string{"features"}, []string{"color-relief", "bathymetry", "heightmap", "satellite"}},
+		{StyleTopoDark, []string{"features"}, []string{"color-relief", "bathymetry", "heightmap", "satellite"}},
 		{StyleTopoRelief, []string{"features", "bathymetry"}, []string{"satellite", "color-relief"}},
-		{StyleSatellite, []string{"features", "satellite", "hillshade"}, []string{"color-relief", "bathymetry"}},
-		{StyleHybrid, []string{"features", "satellite", "heightmap"}, []string{"color-relief", "bathymetry"}},
 		{StyleColorRelief, []string{"features", "color-relief", "hillshade", "satellite"}, []string{"heightmap", "bathymetry"}},
 	}
 
