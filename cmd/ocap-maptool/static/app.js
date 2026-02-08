@@ -45,7 +45,7 @@
         dropZone.querySelector('p').innerHTML = 'Drop grad_meh ZIP here or <label for="file-input">click to upload</label>';
     }
 
-    function pollJob(jobId) {
+    function pollJob(jobId, onComplete) {
         jobsSection.hidden = false;
         const interval = setInterval(async () => {
             try {
@@ -62,12 +62,14 @@
                 if (job.status === 'done' || job.status === 'failed') {
                     clearInterval(interval);
                     loadMaps();
+                    if (onComplete) onComplete(job);
                     if (job.status === 'done') {
                         setTimeout(() => { jobsSection.hidden = true; }, 3000);
                     }
                 }
             } catch (e) {
                 clearInterval(interval);
+                if (onComplete) onComplete(null);
             }
         }, 1000);
     }
@@ -146,6 +148,26 @@
             previewPopup.style.display = 'none';
         }
     }, true);
+
+    // Restyle all maps
+    const restyleBtn = document.getElementById('restyle-all-btn');
+    restyleBtn.addEventListener('click', async () => {
+        if (!confirm('Restyle all maps? This regenerates styles and sprites for every map.')) return;
+        restyleBtn.disabled = true;
+        try {
+            const res = await fetch('/api/maps/restyle', { method: 'POST' });
+            const job = await res.json();
+            if (res.ok) {
+                pollJob(job.id, () => { restyleBtn.disabled = false; });
+            } else {
+                alert('Restyle failed: ' + (job.error || 'unknown error'));
+                restyleBtn.disabled = false;
+            }
+        } catch (err) {
+            alert('Restyle failed: ' + err.message);
+            restyleBtn.disabled = false;
+        }
+    });
 
     // Initial load
     loadTools();
