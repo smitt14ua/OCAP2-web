@@ -29,6 +29,17 @@ type LayerStyle struct {
 	Filter      interface{}
 }
 
+// mountTextField returns a MapLibre expression for the mount label text.
+// Uses the "text" property if available (named peaks), otherwise falls back
+// to the rounded elevation value (spot heights like "34").
+func mountTextField() interface{} {
+	return []interface{}{
+		"coalesce",
+		[]interface{}{"get", "text"},
+		[]interface{}{"to-string", []interface{}{"round", []interface{}{"get", "elevation"}}},
+	}
+}
+
 // roadWidthInterp returns a MapLibre interpolation expression for road width
 // based on the "width" property.
 func roadWidthInterp() interface{} {
@@ -66,23 +77,24 @@ func contourColorExpr(landColor string) interface{} {
 }
 
 // topoContourColorExpr returns a case expression for topo-style contours.
-// Uses arma3UnderwaterContour for underwater (elevation <= 0) and #D1BA94 for land.
+// Uses arma3UnderwaterContour for underwater (elevation <= 0) and the Arma 3
+// olive-khaki color for land contours.
 func topoContourColorExpr() interface{} {
 	return []interface{}{
 		"case",
 		[]interface{}{"<=", []interface{}{"get", "elevation"}, 0.0},
 		arma3UnderwaterContour,
-		"#D1BA94",
+		"#7C8159",
 	}
 }
 
-// topoContourTextColorExpr returns a darker case expression for topo contour labels.
+// topoContourTextColorExpr returns a case expression for topo contour labels.
 func topoContourTextColorExpr() interface{} {
 	return []interface{}{
 		"case",
 		[]interface{}{"<=", []interface{}{"get", "elevation"}, 0.0},
 		"#2A6B9F",
-		"#9A8060",
+		"#7C8159",
 	}
 }
 
@@ -92,7 +104,7 @@ func topoDarkContourTextColorExpr() interface{} {
 		"case",
 		[]interface{}{"<=", []interface{}{"get", "elevation"}, 0.0},
 		"#5599DD",
-		"#9a8a6a",
+		"#6B7050",
 	}
 }
 
@@ -183,13 +195,14 @@ func topoTextPaint(color string) map[string]interface{} {
 }
 
 // topoDarkContourColorExpr returns a case expression for topo-dark contours.
-// Uses arma3UnderwaterContour for underwater (elevation <= 0) and #5a4a3a for land.
+// Uses arma3UnderwaterContour for underwater (elevation <= 0) and a darkened
+// olive-khaki for land contours.
 func topoDarkContourColorExpr() interface{} {
 	return []interface{}{
 		"case",
 		[]interface{}{"<=", []interface{}{"get", "elevation"}, 0.0},
 		arma3UnderwaterContour,
-		"#5a4a3a",
+		"#4A4F36",
 	}
 }
 
@@ -344,7 +357,7 @@ var knownLayerStyles = map[string][]LayerStyle{
 	"main_road": {{
 		ID: "main_road-outline", Type: "line", SourceLayer: "main_road", MinZoom: 12,
 		Paint: map[string]interface{}{
-			"line-color":   "rgba(230, 128, 77, 1)",
+			"line-color":   "#E08050",
 			"line-opacity": 1.0,
 			"line-width":   roadOutlineWidthInterp(),
 		},
@@ -354,7 +367,7 @@ var knownLayerStyles = map[string][]LayerStyle{
 			"line-cap": "butt", "line-join": "round",
 		},
 		Paint: map[string]interface{}{
-			"line-color":   "rgba(255, 153, 1, 1)",
+			"line-color":   "#FF9966",
 			"line-opacity": 1.0,
 			"line-width":   roadWidthInterp(),
 		},
@@ -441,16 +454,16 @@ var knownLayerStyles = map[string][]LayerStyle{
 		ID: "contours", Type: "line", SourceLayer: "contours", MinZoom: 12,
 		Filter: []interface{}{"==", "type", "minor"},
 		Paint: map[string]interface{}{
-			"line-color":   "#D1BA94",
-			"line-opacity": 0.4,
+			"line-color":   contourColorExpr("#7C8159"),
+			"line-opacity": 0.7,
 			"line-width":   0.5,
 		},
 	}, {
 		ID: "contours-major", Type: "line", SourceLayer: "contours", MinZoom: 10,
 		Filter: []interface{}{"==", "type", "major"},
 		Paint: map[string]interface{}{
-			"line-color":   "#A67345",
-			"line-opacity": 0.7,
+			"line-color":   contourColorExpr("#7C8159"),
+			"line-opacity": 1.0,
 			"line-width":   1.0,
 		},
 	}},
@@ -459,16 +472,16 @@ var knownLayerStyles = map[string][]LayerStyle{
 	"contours100": {{
 		ID: "contours100", Type: "line", SourceLayer: "contours100", MinZoom: 8, MaxZoom: 12,
 		Paint: map[string]interface{}{
-			"line-color":   contourColorExpr("#A67345"),
-			"line-opacity": 0.7,
+			"line-color":   contourColorExpr("#7C8159"),
+			"line-opacity": 1.0,
 			"line-width":   1.0,
 		},
 	}},
 	"contours50": {{
 		ID: "contours50", Type: "line", SourceLayer: "contours50", MinZoom: 12,
 		Paint: map[string]interface{}{
-			"line-color":   contourColorExpr("#A67345"),
-			"line-opacity": 0.7,
+			"line-color":   contourColorExpr("#7C8159"),
+			"line-opacity": 0.9,
 			"line-width":   1.0,
 		},
 	}, {
@@ -481,7 +494,7 @@ var knownLayerStyles = map[string][]LayerStyle{
 			"text-max-angle":   30,
 		},
 		Paint: map[string]interface{}{
-			"text-color":      contourColorExpr("#A67345"),
+			"text-color":      contourColorExpr("#7C8159"),
 			"text-halo-color": "rgba(255,255,255,0.7)",
 			"text-halo-width": 1.0,
 		},
@@ -489,16 +502,16 @@ var knownLayerStyles = map[string][]LayerStyle{
 	"contours10": {{
 		ID: "contours10", Type: "line", SourceLayer: "contours10", MinZoom: 14,
 		Paint: map[string]interface{}{
-			"line-color":   contourColorExpr("#D1BA94"),
-			"line-opacity": 0.5,
+			"line-color":   contourColorExpr("#7C8159"),
+			"line-opacity": 0.7,
 			"line-width":   0.5,
 		},
 	}},
 	"contours05": {{
 		ID: "contours05", Type: "line", SourceLayer: "contours05", MinZoom: 16,
 		Paint: map[string]interface{}{
-			"line-color":   contourColorExpr("#D1BA94"),
-			"line-opacity": 0.3,
+			"line-color":   contourColorExpr("#7C8159"),
+			"line-opacity": 0.6,
 			"line-width":   0.25,
 		},
 	}},
@@ -526,20 +539,27 @@ var knownLayerStyles = map[string][]LayerStyle{
 	"powerwind":   {makeIconStyle("powerwind", "objects/powerwind", 15)},
 	"viewtower":   {makeIconStyle("viewtower", "objects/viewtower", 15)},
 
-	// --- Mountain peaks ---
+	// --- Mountain peaks / elevation spots ---
 	"mount": {{
+		ID: "mount-dot", Type: "circle", SourceLayer: "mount", MinZoom: 8,
+		Paint: map[string]interface{}{
+			"circle-radius": 1.5,
+			"circle-color":  "#7C8159",
+		},
+	}, {
 		ID: "mount", Type: "symbol", SourceLayer: "mount", MinZoom: 8,
 		Layout: map[string]interface{}{
-			"icon-allow-overlap": true,
-			"text-field":         []interface{}{"get", "text"},
-			"text-font":          []interface{}{"OpenSans-Regular"},
-			"text-anchor":        "left",
-			"text-size":          12,
-			"text-offset":        []interface{}{0.5, 0.0},
-			"symbol-sort-key":    []interface{}{"*", []interface{}{"get", "elevation"}, -1.0},
+			"text-field":            mountTextField(),
+			"text-font":             []interface{}{"OpenSans-Bold"},
+			"text-anchor":           "left",
+			"text-size":             6,
+			"text-offset":           []interface{}{0.3, 0.0},
+			"text-allow-overlap":    true,
+			"text-ignore-placement": true,
+			"symbol-sort-key":       []interface{}{"*", []interface{}{"get", "elevation"}, -1.0},
 		},
 		Paint: map[string]interface{}{
-			"text-color": "#482c18", "text-opacity": 0.5,
+			"text-color": "#7C8159",
 		},
 	}},
 
@@ -700,19 +720,19 @@ var knownTopoLayerStyles = map[string][]LayerStyle{
 	"contours05": {{
 		ID: "contours/05", Type: "line", SourceLayer: "contours05", MinZoom: 16,
 		Paint: map[string]interface{}{
-			"line-color": topoContourColorExpr(), "line-opacity": 0.3, "line-width": 0.25,
+			"line-color": topoContourColorExpr(), "line-opacity": 0.6, "line-width": 0.25,
 		},
 	}},
 	"contours10": {{
 		ID: "contours/10", Type: "line", SourceLayer: "contours10", MinZoom: 14,
 		Paint: map[string]interface{}{
-			"line-color": topoContourColorExpr(), "line-opacity": 0.5, "line-width": 0.5,
+			"line-color": topoContourColorExpr(), "line-opacity": 0.7, "line-width": 0.5,
 		},
 	}},
 	"contours50": {{
 		ID: "contours/50", Type: "line", SourceLayer: "contours50", MinZoom: 12,
 		Paint: map[string]interface{}{
-			"line-color": topoContourColorExpr(), "line-opacity": seaContourOpacityExpr(0.7), "line-width": 1.0,
+			"line-color": topoContourColorExpr(), "line-opacity": seaContourOpacityExpr(0.9), "line-width": 1.0,
 		},
 	}, {
 		ID: "contours/50-text", Type: "symbol", SourceLayer: "contours50", MinZoom: 14,
@@ -730,7 +750,7 @@ var knownTopoLayerStyles = map[string][]LayerStyle{
 	"contours100": {{
 		ID: "contours/100", Type: "line", SourceLayer: "contours100", MinZoom: 8, MaxZoom: 12,
 		Paint: map[string]interface{}{
-			"line-color": topoContourColorExpr(), "line-opacity": seaContourOpacityExpr(0.7), "line-width": 1.0,
+			"line-color": topoContourColorExpr(), "line-opacity": seaContourOpacityExpr(1.0), "line-width": 1.0,
 		},
 	}},
 	"trail": {{
@@ -748,7 +768,7 @@ var knownTopoLayerStyles = map[string][]LayerStyle{
 	"road": {{
 		ID: "road", Type: "line", SourceLayer: "road", MinZoom: 12,
 		Paint: map[string]interface{}{
-			"line-color": "#FFFFFF", "line-opacity": 1.0, "line-width": roadWidthInterp(),
+			"line-color": "#D6C2A6", "line-opacity": 1.0, "line-width": roadWidthInterp(),
 		},
 	}},
 	"main_road": {{
@@ -757,7 +777,7 @@ var knownTopoLayerStyles = map[string][]LayerStyle{
 			"line-cap": "butt", "line-join": "round",
 		},
 		Paint: map[string]interface{}{
-			"line-color": "rgba(255, 153, 1, 1)", "line-opacity": 1.0, "line-width": roadWidthInterp(),
+			"line-color": "#FF9966", "line-opacity": 1.0, "line-width": roadWidthInterp(),
 		},
 	}},
 	"main_road-bridge": {{
@@ -839,15 +859,23 @@ var knownTopoLayerStyles = map[string][]LayerStyle{
 	"flatarea":          {makeTopoLabel("flatarea", "#406633")},
 	"flatareacitysmall": {makeTopoLabel("flatareacitysmall", "#406633")},
 	"mount": {{
+		ID: "mount-dot", Type: "circle", SourceLayer: "mount",
+		Paint: map[string]interface{}{
+			"circle-radius": 1.5,
+			"circle-color":  "#7C8159",
+		},
+	}, {
 		ID: "mount", Type: "symbol", SourceLayer: "mount",
 		Layout: map[string]interface{}{
-			"text-field":  []interface{}{"get", "text"},
-			"text-font":   []interface{}{"OpenSans-Regular"},
-			"text-anchor": "left",
-			"text-size":   []interface{}{"interpolate", []interface{}{"exponential", 2.0}, []interface{}{"zoom"}, 12.0, 12.0, 16.0, 32.0},
-			"text-offset": []interface{}{1.0, 0.0},
+			"text-field":            mountTextField(),
+			"text-font":             []interface{}{"OpenSans-Bold"},
+			"text-anchor":           "left",
+			"text-size":             []interface{}{"interpolate", []interface{}{"exponential", 2.0}, []interface{}{"zoom"}, 12.0, 6.0, 16.0, 13.0},
+			"text-offset":           []interface{}{0.5, 0.0},
+			"text-allow-overlap":    true,
+			"text-ignore-placement": true,
 		},
-		Paint: topoTextPaint("#482c18"),
+		Paint: topoTextPaint("#7C8159"),
 	}},
 	"airport":          {makeTopoLabel("airport", "#406633")},
 	"fortress":         {makeTopoLabel("fortress", "#406633")},
@@ -928,19 +956,19 @@ var knownTopoDarkLayerStyles = map[string][]LayerStyle{
 	"contours05": {{
 		ID: "contours/05", Type: "line", SourceLayer: "contours05", MinZoom: 16,
 		Paint: map[string]interface{}{
-			"line-color": topoDarkContourColorExpr(), "line-opacity": 0.3, "line-width": 0.25,
+			"line-color": topoDarkContourColorExpr(), "line-opacity": 0.6, "line-width": 0.25,
 		},
 	}},
 	"contours10": {{
 		ID: "contours/10", Type: "line", SourceLayer: "contours10", MinZoom: 14,
 		Paint: map[string]interface{}{
-			"line-color": topoDarkContourColorExpr(), "line-opacity": 0.5, "line-width": 0.5,
+			"line-color": topoDarkContourColorExpr(), "line-opacity": 0.7, "line-width": 0.5,
 		},
 	}},
 	"contours50": {{
 		ID: "contours/50", Type: "line", SourceLayer: "contours50", MinZoom: 12,
 		Paint: map[string]interface{}{
-			"line-color": topoDarkContourColorExpr(), "line-opacity": seaContourOpacityExpr(0.7), "line-width": 1.0,
+			"line-color": topoDarkContourColorExpr(), "line-opacity": seaContourOpacityExpr(0.9), "line-width": 1.0,
 		},
 	}, {
 		ID: "contours/50-text", Type: "symbol", SourceLayer: "contours50", MinZoom: 14,
@@ -958,7 +986,7 @@ var knownTopoDarkLayerStyles = map[string][]LayerStyle{
 	"contours100": {{
 		ID: "contours/100", Type: "line", SourceLayer: "contours100", MinZoom: 8, MaxZoom: 12,
 		Paint: map[string]interface{}{
-			"line-color": topoDarkContourColorExpr(), "line-opacity": seaContourOpacityExpr(0.7), "line-width": 1.0,
+			"line-color": topoDarkContourColorExpr(), "line-opacity": seaContourOpacityExpr(1.0), "line-width": 1.0,
 		},
 	}},
 	"trail": {{
@@ -976,7 +1004,7 @@ var knownTopoDarkLayerStyles = map[string][]LayerStyle{
 	"road": {{
 		ID: "road", Type: "line", SourceLayer: "road", MinZoom: 12,
 		Paint: map[string]interface{}{
-			"line-color": "#888888", "line-opacity": 1.0, "line-width": roadWidthInterp(),
+			"line-color": "#555555", "line-opacity": 1.0, "line-width": roadWidthInterp(),
 		},
 	}},
 	"main_road": {{
@@ -985,7 +1013,7 @@ var knownTopoDarkLayerStyles = map[string][]LayerStyle{
 			"line-cap": "butt", "line-join": "round",
 		},
 		Paint: map[string]interface{}{
-			"line-color": "#cc8833", "line-opacity": 1.0, "line-width": roadWidthInterp(),
+			"line-color": "#FF9966", "line-opacity": 1.0, "line-width": roadWidthInterp(),
 		},
 	}},
 	"main_road-bridge": {{
@@ -1067,15 +1095,23 @@ var knownTopoDarkLayerStyles = map[string][]LayerStyle{
 	"flatarea":          {makeTopoDarkLabel("flatarea", "#8a9a7a")},
 	"flatareacitysmall": {makeTopoDarkLabel("flatareacitysmall", "#8a9a7a")},
 	"mount": {{
+		ID: "mount-dot", Type: "circle", SourceLayer: "mount",
+		Paint: map[string]interface{}{
+			"circle-radius": 1.5,
+			"circle-color":  "#6B7050",
+		},
+	}, {
 		ID: "mount", Type: "symbol", SourceLayer: "mount",
 		Layout: map[string]interface{}{
-			"text-field":  []interface{}{"get", "text"},
-			"text-font":   []interface{}{"OpenSans-Regular"},
-			"text-anchor": "left",
-			"text-size":   []interface{}{"interpolate", []interface{}{"exponential", 2.0}, []interface{}{"zoom"}, 12.0, 12.0, 16.0, 32.0},
-			"text-offset": []interface{}{1.0, 0.0},
+			"text-field":            mountTextField(),
+			"text-font":             []interface{}{"OpenSans-Bold"},
+			"text-anchor":           "left",
+			"text-size":             []interface{}{"interpolate", []interface{}{"exponential", 2.0}, []interface{}{"zoom"}, 12.0, 6.0, 16.0, 13.0},
+			"text-offset":           []interface{}{0.5, 0.0},
+			"text-allow-overlap":    true,
+			"text-ignore-placement": true,
 		},
-		Paint: topoDarkTextPaint("#9a8a6a"),
+		Paint: topoDarkTextPaint("#6B7050"),
 	}},
 	"airport":          {makeTopoDarkLabel("airport", "#8a9a7a")},
 	"fortress":         {makeTopoDarkLabel("fortress", "#8a9a7a")},
@@ -1631,9 +1667,9 @@ var categoryRenderOrder = map[string]int{
 	"buildings-3d":  12,
 	"bridges":       13,
 	"vegetation":    14,
-	"icons":         15,
-	"labels":        16,
-	"other":         17,
+	"other":         15,
+	"icons":         16,
+	"labels":        17,
 }
 
 // buildVectorFeatureLayers generates MapLibre layers from vector layer names,
