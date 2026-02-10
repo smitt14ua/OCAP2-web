@@ -20,6 +20,7 @@ type mockRepo struct {
 	format        map[int64]string
 	duration      map[int64]float64
 	schemaVersion map[int64]uint32
+	chunkCount    map[int64]int
 	byStatus      map[string][]Operation
 }
 
@@ -30,6 +31,7 @@ func newMockRepo() *mockRepo {
 		format:        make(map[int64]string),
 		duration:      make(map[int64]float64),
 		schemaVersion: make(map[int64]uint32),
+		chunkCount:    make(map[int64]int),
 		byStatus:      make(map[string][]Operation),
 	}
 }
@@ -63,6 +65,11 @@ func (m *mockRepo) UpdateSchemaVersion(ctx context.Context, id int64, version ui
 
 func (m *mockRepo) SelectByStatus(ctx context.Context, status string) ([]Operation, error) {
 	return m.byStatus[status], nil
+}
+
+func (m *mockRepo) UpdateChunkCount(ctx context.Context, id int64, count int) error {
+	m.chunkCount[id] = count
+	return nil
 }
 
 func (m *mockRepo) ResetConversionStatus(ctx context.Context, fromStatus, toStatus string) (int64, error) {
@@ -413,6 +420,7 @@ type errorMockRepo struct {
 	format                   map[int64]string
 	duration                 map[int64]float64
 	schemaVersion            map[int64]uint32
+	chunkCount               map[int64]int
 	selectPendingErr         error
 	selectByStatusErr        error
 	resetConversionStatusErr error
@@ -431,6 +439,7 @@ func newErrorMockRepo() *errorMockRepo {
 		format:        make(map[int64]string),
 		duration:      make(map[int64]float64),
 		schemaVersion: make(map[int64]uint32),
+		chunkCount:    make(map[int64]int),
 	}
 }
 
@@ -474,6 +483,11 @@ func (m *errorMockRepo) UpdateMissionDuration(ctx context.Context, id int64, dur
 
 func (m *errorMockRepo) UpdateSchemaVersion(ctx context.Context, id int64, version uint32) error {
 	m.schemaVersion[id] = version
+	return nil
+}
+
+func (m *errorMockRepo) UpdateChunkCount(ctx context.Context, id int64, count int) error {
+	m.chunkCount[id] = count
 	return nil
 }
 

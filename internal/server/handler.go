@@ -256,8 +256,7 @@ func (h *Handler) GetOperationFormat(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusNotFound, "operation not found")
 	}
 
-	engine, format := h.resolveEngine(op.StorageFormat)
-	chunkCount, _ := engine.ChunkCount(c.Request().Context(), op.Filename)
+	_, format := h.resolveEngine(op.StorageFormat)
 
 	// Default schema version to 1 for legacy recordings
 	schemaVersion := op.SchemaVersion
@@ -267,8 +266,8 @@ func (h *Handler) GetOperationFormat(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, FormatInfo{
 		Format:            format,
-		ChunkCount:        chunkCount,
-		SupportsStreaming: engine.SupportsStreaming(),
+		ChunkCount:        op.ChunkCount,
+		SupportsStreaming: format == "protobuf",
 		SchemaVersion:     schemaVersion,
 	})
 }
