@@ -839,7 +839,7 @@ func TestNewHandler(t *testing.T) {
 
 	setting := Setting{
 		Listen:    "127.0.0.1:5000",
-		PrefixURL: "/aar/",
+		PrefixURL: "/sub/",
 		Secret:    "test-secret",
 		Data:      dataDir,
 		Markers:   markerDir,
@@ -860,10 +860,10 @@ func TestNewHandler(t *testing.T) {
 	for i, r := range routes {
 		routePaths[i] = r.Path
 	}
-	assert.Contains(t, routePaths, "/aar/api/v1/operations")
-	assert.Contains(t, routePaths, "/aar/api/v1/operations/add")
-	assert.Contains(t, routePaths, "/aar/api/version")
-	assert.Contains(t, routePaths, "/aar/data/*")
+	assert.Contains(t, routePaths, "/sub/api/v1/operations")
+	assert.Contains(t, routePaths, "/sub/api/v1/operations/add")
+	assert.Contains(t, routePaths, "/sub/api/version")
+	assert.Contains(t, routePaths, "/sub/data/*")
 }
 
 func TestNewHandlerWithOptions(t *testing.T) {

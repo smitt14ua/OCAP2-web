@@ -1,0 +1,44 @@
+/* ==========================================================================
+   Global Utility Classes
+   Side colour classes, text weights, hints, loading, range inputs.
+   ========================================================================== */
+
+/* ---------- Side colour classes (unit list, event list, counter) ---------- */
+
+.blufor {
+  color: var(--side-blufor);
+}
+
+.opfor {
+  color: var(--side-opfor);
+}
+
+.ind {
+  color: var(--side-ind);
+}
+
+.civ {
+  color: var(--side-civ);
+}
+
+/* ---------- Text weights ---------- */
+
+.bold {
+  font-weight: bold;
+}
+
+.medium {
+  font-weight: 500;
+}
+
+/* ---------- Event item state classes ---------- */
+
+.reveal {
+  opacity: 1;
+  transition: opacity 1s;
+}
+
+.action {
+  cursor: pointer;
+}
+

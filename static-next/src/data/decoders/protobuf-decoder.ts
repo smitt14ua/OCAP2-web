@@ -1,0 +1,217 @@
+import type { ArmaCoord } from "../../utils/coordinates";
+import type {
+  AliveState,
+  ChunkData,
+  EntityDef as AppEntityDef,
+  EntityState as AppEntityState,
+  EntityType,
+  EventDef,
+  Manifest as AppManifest,
+  MarkerDef as AppMarkerDef,
+  Side,
+} from "../types";
+import type { DecoderStrategy } from "./decoder.interface";
+import {
+  Manifest as PbManifest,
+  Chunk as PbChunk,
+  EntityType as PbEntityType,
+  Side as PbSide,
+  type EntityDef as PbEntityDef,
+  type EntityState as PbEntityState,
+  type Event as PbEvent,
+  type MarkerDef as PbMarkerDef,
+  type MarkerPosition as PbMarkerPosition,
+} from "./generated/ocap.pb";
+
+// ───────── Enum mapping ─────────
+
+const ENTITY_SIDE_MAP: Record<number, Side> = {
+  [PbSide.SIDE_WEST]: "WEST",
+  [PbSide.SIDE_EAST]: "EAST",
+  [PbSide.SIDE_GUER]: "GUER",
+  [PbSide.SIDE_CIV]: "CIV",
+};
+
+const MARKER_SIDE_MAP: Record<number, string> = {
+  ...ENTITY_SIDE_MAP,
+  [PbSide.SIDE_GLOBAL]: "GLOBAL",
+};
+
+function mapVehicleClass(vehicleClass: string): EntityType {
+  switch (vehicleClass) {
+    case "car": return "car";
+    case "tank": return "tank";
+    case "apc": return "apc";
+    case "truck": return "truck";
+    case "sea": return "ship";
+    case "heli": return "heli";
+    case "plane": return "plane";
+    case "parachute": return "parachute";
+    case "static-weapon": return "staticWeapon";
+    case "static-mortar": return "staticMortar";
+    default: return "unknown";
+  }
+}
+
+// ───────── Conversion helpers ─────────
+
+function convertEntityDef(pb: PbEntityDef): AppEntityDef {
+  let entityType: EntityType;
+  if (pb.type === PbEntityType.ENTITY_TYPE_UNIT) {
+    entityType = "man";
+  } else if (pb.type === PbEntityType.ENTITY_TYPE_VEHICLE && pb.vehicleClass) {
+    entityType = mapVehicleClass(pb.vehicleClass);
+  } else {
+    entityType = "unknown";
+  }
+
+  const def: AppEntityDef = {
+    id: pb.id,
+    type: entityType,
+    name: pb.name,
+    side: ENTITY_SIDE_MAP[pb.side] ?? "CIV",
+    groupName: pb.groupName,
+    isPlayer: pb.isPlayer,
+    startFrame: pb.startFrame,
+    endFrame: pb.endFrame,
+  };
+  if (pb.role) def.role = pb.role;
+  if (pb.framesFired.length > 0) {
+    def.framesFired = pb.framesFired.map((ff) => [
+      ff.frameNum,
+      [ff.posX, ff.posY] as ArmaCoord,
+    ]);
+  }
+  return def;
+}
+
+function convertEntityState(pb: PbEntityState): AppEntityState {
+  const state: AppEntityState = {
+    position: [pb.posX, pb.posY] as ArmaCoord,
+    direction: pb.direction,
+    alive: (pb.alive & 0x3) as AliveState,
+  };
+  if (pb.name) state.name = pb.name;
+  if (pb.crewIds.length > 0) state.crewIds = [...pb.crewIds];
+  if (pb.vehicleId) state.vehicleId = pb.vehicleId;
+  if (pb.isInVehicle) state.isInVehicle = pb.isInVehicle;
+  if (pb.isPlayer) state.isPlayer = pb.isPlayer;
+  return state;
+}
+
+function convertEvent(pb: PbEvent): EventDef | null {
+  const { frameNum, type } = pb;
+
+  switch (type) {
+    case "hit":
+    case "killed":
+      return {
+        frameNum,
+        type,
+        victimId: pb.targetId,
+        causedById: pb.sourceId,
+        distance: pb.distance,
+        weapon: pb.weapon,
+      };
+    case "connected":
+    case "disconnected":
+      return { frameNum, type, unitName: pb.message };
+    case "respawnTickets":
+    case "counterInit":
+    case "counterSet":
+      return {
+        frameNum,
+        type,
+        data: pb.message ? pb.message.split(",").map(Number) : [],
+      };
+    case "endMission":
+      return {
+        frameNum,
+        type,
+        side: pb.message?.split(",")[0] ?? "",
+        message: pb.message?.split(",").slice(1).join(",") ?? "",
+      };
+    default:
+      return null;
+  }
+}
+
+function convertMarkerPosition(pb: PbMarkerPosition): [number, ...any] {
+  return [
+    pb.frameNum,
+    pb.posX,
+    pb.posY,
+    pb.posZ,
+    pb.direction,
+    pb.alpha,
+    ...pb.lineCoords,
+  ];
+}
+
+function convertMarkerDef(pb: PbMarkerDef): AppMarkerDef {
+  const positions = pb.positions.map(convertMarkerPosition);
+  const alpha = pb.positions.length > 0 ? pb.positions[0].alpha : 1;
+  const side = MARKER_SIDE_MAP[pb.side] ?? String(pb.side);
+
+  const marker: AppMarkerDef = {
+    shape: (pb.shape || "ICON") as AppMarkerDef["shape"],
+    type: pb.type,
+    side,
+    color: pb.color,
+    positions,
+    player: pb.playerId,
+    alpha,
+    startFrame: pb.startFrame,
+    endFrame: pb.endFrame,
+  };
+  if (pb.text) marker.text = pb.text;
+  if (pb.size.length >= 2) marker.size = [pb.size[0], pb.size[1]];
+  if (pb.brush) marker.brush = pb.brush;
+  return marker;
+}
+
+// ───────── Public decoder ─────────
+
+export class ProtobufDecoder implements DecoderStrategy {
+  decodeManifest(buffer: ArrayBuffer): AppManifest {
+    const pb = PbManifest.decode(new Uint8Array(buffer));
+
+    return {
+      version: pb.version,
+      worldName: pb.worldName,
+      missionName: pb.missionName,
+      frameCount: pb.frameCount,
+      chunkSize: pb.chunkSize,
+      captureDelayMs: pb.captureDelayMs,
+      chunkCount: pb.chunkCount,
+      entities: pb.entities.map(convertEntityDef),
+      events: pb.events.map(convertEvent).filter((e): e is EventDef => e !== null),
+      markers: pb.markers.map(convertMarkerDef),
+      times: pb.times.map((t) => ({
+        frameNum: t.frameNum,
+        systemTimeUtc: t.systemTimeUtc,
+      })),
+      extensionVersion: pb.extensionVersion || undefined,
+      addonVersion: pb.addonVersion || undefined,
+    };
+  }
+
+  decodeChunk(buffer: ArrayBuffer): ChunkData {
+    const pb = PbChunk.decode(new Uint8Array(buffer));
+
+    const entities = new Map<number, AppEntityState[]>();
+    for (const frame of pb.frames) {
+      const idx = frame.frameNum - pb.startFrame;
+      for (const raw of frame.entities) {
+        let arr = entities.get(raw.entityId);
+        if (!arr) {
+          arr = new Array(pb.frameCount);
+          entities.set(raw.entityId, arr);
+        }
+        arr[idx] = convertEntityState(raw);
+      }
+    }
+
+    return { entities };
+  }
+}

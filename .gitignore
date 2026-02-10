@@ -8,7 +8,7 @@
 
 # Runtime data
 data.db
-data/
+/data/
 maps/
 setting.json
 static/data
@@ -24,3 +24,7 @@ docs/plans/
 cover.out
 coverage.out
 coverage.html
+
+# Frontend (static-next)
+static-next/node_modules/
+static-next/dist/
