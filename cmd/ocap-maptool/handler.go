@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"context"
+	"errors"
 	"embed"
 	"fmt"
 	"io"
@@ -151,6 +152,7 @@ func (h *handler) restyleAll(c echo.Context) error {
 
 	id := fmt.Sprintf("restyle-%d", time.Now().UnixMilli())
 	snap, err := h.jm.SubmitFunc(id, "restyle-all", func(ctx context.Context, job *maptool.Job) error {
+		var errs []error
 		for i, m := range maps {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -158,9 +160,13 @@ func (h *handler) restyleAll(c echo.Context) error {
 			job.SetProgress(m.Name, i+1, len(maps))
 			if err := restyleWorld(h.mapsDir, m.Name); err != nil {
 				log.Printf("restyle %s: %v", m.Name, err)
-				return fmt.Errorf("%s: %w", m.Name, err)
+				errs = append(errs, fmt.Errorf("%s: %w", m.Name, err))
+				continue
 			}
 			log.Printf("restyled: %s", m.Name)
+		}
+		if len(errs) > 0 {
+			return fmt.Errorf("failed to restyle %d map(s):\n%w", len(errs), errors.Join(errs...))
 		}
 		return nil
 	})
