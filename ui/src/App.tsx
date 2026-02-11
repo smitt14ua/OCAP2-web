@@ -141,6 +141,7 @@ export function App(): JSX.Element {
     } catch (err) {
       console.error("Failed to load operation:", err);
       showHint("Failed to load operation");
+      throw err;
     }
   }
 
@@ -254,10 +255,7 @@ export function App(): JSX.Element {
           <MissionModal
             open={modalOpen}
             onClose={() => setModalOpen(false)}
-            onSelectOperation={(op) => {
-              setModalOpen(false);
-              void loadOperation(op);
-            }}
+            onSelectOperation={(op) => loadOperation(op)}
           />
           <AboutModal
             open={aboutOpen}
