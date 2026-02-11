@@ -299,7 +299,7 @@ var knownLayerStyles = map[string][]LayerStyle{
 		},
 	}},
 	"house": {{
-		ID: "house", Type: "fill", SourceLayer: "house", MinZoom: 13,
+		ID: "house", Type: "fill", SourceLayer: "house",
 		Paint: map[string]interface{}{
 			"fill-color":     []interface{}{"concat", "#", []interface{}{"get", "color"}},
 			"fill-antialias": true,
@@ -715,8 +715,11 @@ func makeTopoLabel(name, color string) LayerStyle {
 
 // knownTopoLayerStyles maps layer names to their topo-specific MapLibre styles.
 var knownTopoLayerStyles = map[string][]LayerStyle{
-	// NOTE: "sea" is handled explicitly in buildTopoLayers() as land/sea
-	// with ELEV_MAX filters. It's kept in topoLayerOrder to suppress fallback.
+	// nil entries suppress the standard-style fallback for layers that are
+	// either handled explicitly (sea via buildLandSeaLayers) or intentionally
+	// unstyled in topo (legacy contours — topo uses 4-interval contours instead).
+	"sea":      nil,
+	"contours": nil,
 	"contours05": {{
 		ID: "contours/05", Type: "line", SourceLayer: "contours05", MinZoom: 16,
 		Paint: map[string]interface{}{
@@ -732,7 +735,9 @@ var knownTopoLayerStyles = map[string][]LayerStyle{
 	"contours50": {{
 		ID: "contours/50", Type: "line", SourceLayer: "contours50", MinZoom: 12,
 		Paint: map[string]interface{}{
-			"line-color": topoContourColorExpr(), "line-opacity": seaContourOpacityExpr(0.9), "line-width": 1.0,
+			"line-color":   topoContourColorExpr(),
+			"line-opacity": seaContourOpacityExpr(0.7),
+			"line-width":   []interface{}{"interpolate", []interface{}{"linear"}, []interface{}{"zoom"}, 12.0, 0.5, 15.0, 1.0},
 		},
 	}, {
 		ID: "contours/50-text", Type: "symbol", SourceLayer: "contours50", MinZoom: 14,
@@ -750,7 +755,9 @@ var knownTopoLayerStyles = map[string][]LayerStyle{
 	"contours100": {{
 		ID: "contours/100", Type: "line", SourceLayer: "contours100", MinZoom: 8, MaxZoom: 12,
 		Paint: map[string]interface{}{
-			"line-color": topoContourColorExpr(), "line-opacity": seaContourOpacityExpr(1.0), "line-width": 1.0,
+			"line-color":   topoContourColorExpr(),
+			"line-opacity": seaContourOpacityExpr(0.7),
+			"line-width":   []interface{}{"interpolate", []interface{}{"linear"}, []interface{}{"zoom"}, 8.0, 0.3, 11.0, 0.7},
 		},
 	}},
 	"trail": {{
@@ -800,22 +807,7 @@ var knownTopoLayerStyles = map[string][]LayerStyle{
 			"fill-color": "#000000", "fill-opacity": 0.3, "fill-antialias": true,
 		},
 	}},
-	"house": {{
-		ID: "house", Type: "fill", SourceLayer: "house", MinZoom: 13,
-		Paint: map[string]interface{}{
-			"fill-color":     []interface{}{"concat", "#", []interface{}{"get", "color"}},
-			"fill-antialias": true,
-			"fill-opacity":   1.0,
-		},
-	}},
-	"house-extrusion": {{
-		ID: "house-extrusion", Type: "fill-extrusion", SourceLayer: "house",
-		Paint: map[string]interface{}{
-			"fill-extrusion-color":   []interface{}{"concat", "#", []interface{}{"get", "color"}},
-			"fill-extrusion-opacity": []interface{}{"interpolate", []interface{}{"linear"}, []interface{}{"zoom"}, 16.0, 1.0, 18.0, 0.85},
-			"fill-extrusion-height":  []interface{}{"get", "height"},
-		},
-	}},
+	// "house" and "house-extrusion" fall back to knownLayerStyles (identical across variants)
 	"railway": {{
 		ID: "railway", Type: "line", SourceLayer: "railway", MinZoom: 14,
 		Paint: map[string]interface{}{
@@ -952,7 +944,8 @@ var topoLayerOrder = []string{
 
 // knownTopoDarkLayerStyles maps layer names to their topo-dark-specific MapLibre styles.
 var knownTopoDarkLayerStyles = map[string][]LayerStyle{
-	// NOTE: "sea" is handled explicitly in buildTopoDarkLayers() as land/sea.
+	"sea":      nil, // handled by buildLandSeaLayers
+	"contours": nil, // topo uses 4-interval contours
 	"contours05": {{
 		ID: "contours/05", Type: "line", SourceLayer: "contours05", MinZoom: 16,
 		Paint: map[string]interface{}{
@@ -968,7 +961,9 @@ var knownTopoDarkLayerStyles = map[string][]LayerStyle{
 	"contours50": {{
 		ID: "contours/50", Type: "line", SourceLayer: "contours50", MinZoom: 12,
 		Paint: map[string]interface{}{
-			"line-color": topoDarkContourColorExpr(), "line-opacity": seaContourOpacityExpr(0.9), "line-width": 1.0,
+			"line-color":   topoDarkContourColorExpr(),
+			"line-opacity": seaContourOpacityExpr(0.7),
+			"line-width":   []interface{}{"interpolate", []interface{}{"linear"}, []interface{}{"zoom"}, 12.0, 0.5, 15.0, 1.0},
 		},
 	}, {
 		ID: "contours/50-text", Type: "symbol", SourceLayer: "contours50", MinZoom: 14,
@@ -986,7 +981,9 @@ var knownTopoDarkLayerStyles = map[string][]LayerStyle{
 	"contours100": {{
 		ID: "contours/100", Type: "line", SourceLayer: "contours100", MinZoom: 8, MaxZoom: 12,
 		Paint: map[string]interface{}{
-			"line-color": topoDarkContourColorExpr(), "line-opacity": seaContourOpacityExpr(1.0), "line-width": 1.0,
+			"line-color":   topoDarkContourColorExpr(),
+			"line-opacity": seaContourOpacityExpr(0.7),
+			"line-width":   []interface{}{"interpolate", []interface{}{"linear"}, []interface{}{"zoom"}, 8.0, 0.3, 11.0, 0.7},
 		},
 	}},
 	"trail": {{
@@ -1036,22 +1033,7 @@ var knownTopoDarkLayerStyles = map[string][]LayerStyle{
 			"fill-color": "#333333", "fill-opacity": 0.4, "fill-antialias": true,
 		},
 	}},
-	"house": {{
-		ID: "house", Type: "fill", SourceLayer: "house", MinZoom: 13,
-		Paint: map[string]interface{}{
-			"fill-color":     []interface{}{"concat", "#", []interface{}{"get", "color"}},
-			"fill-antialias": true,
-			"fill-opacity":   1.0,
-		},
-	}},
-	"house-extrusion": {{
-		ID: "house-extrusion", Type: "fill-extrusion", SourceLayer: "house",
-		Paint: map[string]interface{}{
-			"fill-extrusion-color":   []interface{}{"concat", "#", []interface{}{"get", "color"}},
-			"fill-extrusion-opacity": []interface{}{"interpolate", []interface{}{"linear"}, []interface{}{"zoom"}, 16.0, 1.0, 18.0, 0.85},
-			"fill-extrusion-height":  []interface{}{"get", "height"},
-		},
-	}},
+	// "house" and "house-extrusion" fall back to knownLayerStyles (identical across variants)
 	"railway": {{
 		ID: "railway", Type: "line", SourceLayer: "railway", MinZoom: 14,
 		Paint: map[string]interface{}{
@@ -1435,7 +1417,7 @@ func buildOrderedVectorLayers(layerNames []string, styleMap map[string][]LayerSt
 	emitted := make(map[string]bool)
 	var result []interface{}
 
-	// Emit layers in topo render order
+	// Emit layers in topo render order, falling back to standard styles
 	for _, name := range topoLayerOrder {
 		if !available[name] {
 			continue
@@ -1443,7 +1425,7 @@ func buildOrderedVectorLayers(layerNames []string, styleMap map[string][]LayerSt
 		emitted[name] = true
 		styles, ok := styleMap[name]
 		if !ok {
-			continue
+			styles = GetLayerStyles(name)
 		}
 		for _, style := range styles {
 			result = append(result, layerStyleToMap(style))
