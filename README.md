@@ -134,6 +134,7 @@ Docker images are available for `linux/amd64` and `linux/arm64` architectures.
 | `OCAP_CUSTOMIZE_WEBSITEURL` | Link on the logo to your website | |
 | `OCAP_CUSTOMIZE_WEBSITELOGO` | URL to your website logo | |
 | `OCAP_CUSTOMIZE_WEBSITELOGOSIZE` | Logo size | `32px` |
+| `OCAP_STATIC` | Serve frontend from this directory instead of the embedded build | *embedded* |
 | `OCAP_CONVERSION_ENABLED` | Enable automatic conversion | `false` |
 | `OCAP_CONVERSION_INTERVAL` | Conversion check interval | `5m` |
 
@@ -217,22 +218,21 @@ Download the latest release from [GitHub Releases](https://github.com/OCAP2/web/
 | Linux x64 | `ocap-webserver-linux-amd64.tar.gz` |
 | Linux ARM64 | `ocap-webserver-linux-arm64.tar.gz` |
 
-Each archive contains the binary and required assets (markers, ammo, static files).
+Each archive contains the binary and required assets (markers, ammo icons).
 
 ### Build from source
 
-Requires [Go 1.24+](https://golang.org/dl/) and [protoc](https://grpc.io/docs/protoc-installation/) (for schema changes only).
+Requires [Go 1.24+](https://golang.org/dl/) and [Node.js 22+](https://nodejs.org/).
 
 ```bash
-# Linux / macOS
+# Build the frontend
+cd ui && npm ci && npm run build && cd ..
+
+# Build the server (frontend is embedded into the binary)
 go build -o ocap-webserver ./cmd/ocap-webserver
 
-# Windows
-go build -o ocap-webserver.exe ./cmd/ocap-webserver
-
-# Regenerate protobuf code (after modifying .proto files)
-go generate ./pkg/schemas/...
-
-# Docker
+# Or build everything via Docker
 docker build -t ocap-webserver .
 ```
+
+For development setup and workflow details, see [CONTRIBUTING.md](CONTRIBUTING.md).
