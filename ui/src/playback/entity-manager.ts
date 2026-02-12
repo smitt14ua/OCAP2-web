@@ -71,9 +71,32 @@ export class EntityManager {
     return this.getAll().filter((e): e is Vehicle => e instanceof Vehicle);
   }
 
-  /** Return all Units belonging to a given side. */
+  /**
+   * Return all Units belonging to a given side, deduplicated by name per group.
+   * Respawns and JIPs create multiple entities for the same player;
+   * only the longest-lived entity per name+group is returned.
+   */
   getBySide(side: Side): Unit[] {
-    return this.getUnits().filter((u) => u.side === side);
+    const units = this.getUnits().filter((u) => u.side === side);
+    // Deduplicate: key by "group\0name", keep the entity with the most frames.
+    // Skip dedup for units with empty names — they are distinct AI/unnamed entities.
+    const best = new Map<string, Unit>();
+    const unnamed: Unit[] = [];
+    for (const u of units) {
+      if (!u.name) {
+        unnamed.push(u);
+        continue;
+      }
+      const key = `${u.groupName}\0${u.name}`;
+      const existing = best.get(key);
+      if (
+        !existing ||
+        u.endFrame - u.startFrame > existing.endFrame - existing.startFrame
+      ) {
+        best.set(key, u);
+      }
+    }
+    return [...best.values(), ...unnamed];
   }
 
   /** Create and register a new Group. */
