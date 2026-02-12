@@ -184,7 +184,6 @@ func NewGenerateSatellitePMTilesStage(tools ToolSet) Stage {
 			if !ok {
 				return fmt.Errorf("gdal_translate not found")
 			}
-			gdalAddo, hasAddo := tools.FindTool("gdaladdo")
 			pmtilesBin, ok := tools.FindTool("pmtiles")
 			if !ok {
 				return fmt.Errorf("pmtiles not found")
@@ -199,18 +198,16 @@ func NewGenerateSatellitePMTilesStage(tools ToolSet) Stage {
 
 			mbtilesPath := filepath.Join(job.TempDir, "satellite.mbtiles")
 			if err := RasterToMBTiles(ctx, gdalTranslate.Path, job.SatImage, mbtilesPath,
-				"satellite", job.MinZoom, job.MaxZoom, "PNG", "LANCZOS"); err != nil {
+				"satellite", job.MinZoom, job.MaxZoom, "JPEG", "CUBIC"); err != nil {
 				return err
 			}
 
-			if hasAddo {
-				if err := AddOverviews(ctx, gdalAddo.Path, mbtilesPath); err != nil {
-					log.Printf("WARNING: gdaladdo failed: %v", err)
-				}
-			}
-
 			outputPath := filepath.Join(job.TilesOutputDir(), "satellite.pmtiles")
-			return MBTilesToPMTiles(ctx, pmtilesBin.Path, mbtilesPath, outputPath)
+			if err := MBTilesToPMTiles(ctx, pmtilesBin.Path, mbtilesPath, outputPath); err != nil {
+				return err
+			}
+			os.Remove(mbtilesPath)
+			return nil
 		},
 	}
 }

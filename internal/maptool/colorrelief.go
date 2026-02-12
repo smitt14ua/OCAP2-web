@@ -67,6 +67,7 @@ func NewGenerateColorReliefStage(tools ToolSet) Stage {
 					job.DEMPath,
 					guidePath,
 					colorReliefTif,
+					"-co", "COMPRESS=LZW", "-co", "PREDICTOR=2", "-co", "NUM_THREADS=ALL_CPUS",
 				}
 				log.Printf("Generating color relief")
 				if err := runCmd(ctx, gdalDem.Path, args...); err != nil {
@@ -91,6 +92,7 @@ func NewGenerateColorReliefStage(tools ToolSet) Stage {
 			if err := MBTilesToPMTiles(ctx, pmtilesBin.Path, mbtilesPath, outputPath); err != nil {
 				return err
 			}
+			os.Remove(mbtilesPath)
 
 			job.HasColorRelief = true
 			log.Printf("Generated %s", outputPath)

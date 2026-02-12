@@ -4,23 +4,27 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"time"
 )
 
-// runCmd executes a command, streaming output to stdout/stderr in real time
-// while also capturing it. On error, the captured output is included in the
-// error message for diagnostics.
+// runCmd executes a command, capturing output silently. On success it logs the
+// duration; on error the captured output is included in the error message.
+// Output is not streamed to stdout/stderr to avoid garbled progress bars when
+// multiple commands run in parallel.
 func runCmd(ctx context.Context, name string, args ...string) error {
+	start := time.Now()
 	var buf bytes.Buffer
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Stdout = io.MultiWriter(os.Stdout, &buf)
-	cmd.Stderr = io.MultiWriter(os.Stderr, &buf)
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%w\nOutput:\n%s", err, buf.String())
 	}
+	log.Printf("%s completed in %s", filepath.Base(name), time.Since(start).Round(time.Millisecond))
 	return nil
 }
 
@@ -32,6 +36,7 @@ func RasterToMBTiles(ctx context.Context, gdalTranslate, input, output, name str
 	os.Remove(output)
 
 	args := []string{
+		"--config", "GDAL_NUM_THREADS", "ALL_CPUS",
 		"-of", "MBTILES",
 		"-co", "TYPE=baselayer",
 		"-co", "QUALITY=80",
@@ -53,7 +58,8 @@ func RasterToMBTiles(ctx context.Context, gdalTranslate, input, output, name str
 // AddOverviews adds overview levels to an MBTiles file using gdaladdo.
 func AddOverviews(ctx context.Context, gdalAddo, mbtiles string) error {
 	log.Printf("gdaladdo %s", mbtiles)
-	return runCmd(ctx, gdalAddo, "-r", "average", mbtiles, "2", "4", "8", "16")
+	return runCmd(ctx, gdalAddo, "--config", "GDAL_NUM_THREADS", "ALL_CPUS",
+		"-r", "average", mbtiles, "2", "4", "8", "16")
 }
 
 // MBTilesToPMTiles converts MBTiles to PMTiles using the pmtiles CLI.

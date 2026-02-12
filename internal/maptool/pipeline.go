@@ -3,9 +3,13 @@ package maptool
 import (
 	"context"
 	"fmt"
+	"log"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // Job status constants.
@@ -179,6 +183,8 @@ func (p *Pipeline) Run(ctx context.Context, job *Job) error {
 	job.StartedAt = time.Now()
 	job.mu.Unlock()
 
+	pipelineStart := time.Now()
+
 	for i, stage := range p.stages {
 		if err := ctx.Err(); err != nil {
 			job.setStatus(StatusCancelled, "")
@@ -192,6 +198,7 @@ func (p *Pipeline) Run(ctx context.Context, job *Job) error {
 			TotalStages: len(p.stages),
 		})
 
+		stageStart := time.Now()
 		if err := stage.Run(ctx, job); err != nil {
 			if stage.Optional {
 				p.reportProgress(job, Progress{
@@ -206,10 +213,43 @@ func (p *Pipeline) Run(ctx context.Context, job *Job) error {
 			job.setStatus(StatusFailed, err.Error())
 			return fmt.Errorf("stage %s: %w", stage.Name, err)
 		}
+		log.Printf("[%d/%d] %s completed in %s", i+1, len(p.stages), stage.Name, time.Since(stageStart).Round(time.Millisecond))
 	}
 
+	log.Printf("Pipeline completed in %s", time.Since(pipelineStart).Round(time.Millisecond))
 	job.setStatus(StatusDone, "")
 	return nil
+}
+
+// ParallelStages creates a single Stage that runs multiple sub-stages concurrently.
+// Optional sub-stages are skipped on error; if any required sub-stage fails, the
+// remaining stages are cancelled and the error is returned.
+func ParallelStages(name string, stages ...Stage) Stage {
+	return Stage{
+		Name: name,
+		Run: func(ctx context.Context, job *Job) error {
+			var names []string
+			for _, s := range stages {
+				names = append(names, s.Name)
+			}
+			log.Printf("Running %d stages in parallel: [%s]", len(stages), strings.Join(names, ", "))
+
+			g, ctx := errgroup.WithContext(ctx)
+			for _, s := range stages {
+				g.Go(func() error {
+					if err := s.Run(ctx, job); err != nil {
+						if s.Optional {
+							log.Printf("Optional stage %s skipped: %v", s.Name, err)
+							return nil
+						}
+						return fmt.Errorf("%s: %w", s.Name, err)
+					}
+					return nil
+				})
+			}
+			return g.Wait()
+		},
+	}
 }
 
 func (p *Pipeline) reportProgress(job *Job, prog Progress) {
