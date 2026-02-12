@@ -7,6 +7,8 @@ export interface CustomizeConfig {
   websiteLogo?: string;
   websiteLogoSize?: string;
   disableKillCount?: boolean;
+  headerTitle?: string;
+  headerSubtitle?: string;
 }
 
 export interface BuildInfo {
@@ -42,6 +44,10 @@ interface RawOperation {
   conversionStatus?: string;
   schemaVersion?: number;
   chunkCount?: number;
+  player_count?: number;
+  kill_count?: number;
+  player_kill_count?: number;
+  side_composition?: Record<string, { players: number; units: number; dead: number; kills: number }>;
 }
 
 function mapOperation(raw: RawOperation): Operation {
@@ -57,6 +63,10 @@ function mapOperation(raw: RawOperation): Operation {
     conversionStatus: raw.conversionStatus,
     schemaVersion: raw.schemaVersion,
     chunkCount: raw.chunkCount,
+    playerCount: raw.player_count,
+    killCount: raw.kill_count,
+    playerKillCount: raw.player_kill_count,
+    sideComposition: raw.side_composition,
   };
 }
 
@@ -100,6 +110,16 @@ export class ApiClient {
     const url = `${this.baseUrl}/api/v1/operations${qs ? `?${qs}` : ""}`;
     const data = await this.fetchJson<RawOperation[]>(url);
     return data.map(mapOperation);
+  }
+
+  /**
+   * Fetch a single operation by ID or filename.
+   * GET {baseUrl}/api/v1/operations/{id}
+   */
+  async getOperation(id: string): Promise<Operation> {
+    const url = `${this.baseUrl}/api/v1/operations/${encodeURIComponent(id)}`;
+    const data = await this.fetchJson<RawOperation>(url);
+    return mapOperation(data);
   }
 
   /**

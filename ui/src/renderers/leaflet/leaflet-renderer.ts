@@ -257,50 +257,75 @@ export class LeafletRenderer implements MapRenderer {
     if (styleUrl) {
       // Register PMTiles protocol and add the layer — must happen in order
       void (async () => {
-        // 1. Register PMTiles protocol (idempotent)
+        // Absolute base for resolving relative paths in MapLibre style
+        // documents. Style JSON contains root-relative paths like
+        // "images/maps/altis/tiles/features.pmtiles" that must resolve
+        // against the app base, not the current page route (e.g. /recording/:id).
+        const absBase = new URL(
+          import.meta.env.BASE_URL,
+          window.location.origin,
+        ).href; // e.g. "http://localhost:5173/"
+
+        // 1. Register PMTiles protocol with URL rewriting (idempotent)
         if (!(window as any)._pmtilesRegistered) {
           try {
             const { Protocol } = await import("pmtiles");
             const maplibregl = await import("maplibre-gl");
             const protocol = new Protocol();
-            maplibregl.addProtocol("pmtiles", protocol.tile);
+            // Wrap PMTiles handler to resolve relative paths against app base
+            maplibregl.addProtocol(
+              "pmtiles",
+              (params: any, ac: AbortController) => {
+                const rest = params.url.slice("pmtiles://".length);
+                if (!rest.startsWith("http") && !rest.startsWith("/")) {
+                  return protocol.tile(
+                    { ...params, url: "pmtiles://" + absBase + rest },
+                    ac,
+                  );
+                }
+                return protocol.tile(params, ac);
+              },
+            );
             (window as any)._pmtilesRegistered = true;
           } catch {
             // PMTiles not available — MapLibre may still work without PMTiles
           }
         }
 
-        // 2. Add MapLibre basemap layer (after protocol is registered)
-        // Resolve font glyph base URL against page origin so it works
-        // regardless of where the style JSON is served from (local or CDN).
-        const fontsBaseURL = new URL("images/maps/fonts/", window.location.href).href;
+        // 2. transformRequest resolves relative sprite/glyph/tile URLs.
+        // URLs with any protocol (http:, https:, pmtiles:, data:) or
+        // protocol-relative (//) are left unchanged.
+        const transformRequest = (url: string) => {
+          if (!/^(\w+:)?\/\/|^data:/.test(url)) {
+            return { url: absBase + url.replace(/^\//, "") };
+          }
+          return { url };
+        };
 
-        // Resolve saved style preference
-        const styleBase = world.tileBaseUrl + "/styles/";
+        // 3. Build style candidates
+        const raw = world.tileBaseUrl ?? "";
+        const tileBase = raw.startsWith("http")
+          ? raw
+          : new URL(
+              import.meta.env.BASE_URL + raw.replace(/^\//, ""),
+              window.location.origin,
+            ).href;
+        const styleBase = tileBase + "/styles/";
         const styleCandidates: StyleCandidate[] = [
           { label: "Topographic", url: styleBase + "topo.json" },
           { label: "Topographic Dark", url: styleBase + "topo-dark.json" },
           { label: "Color Relief", url: styleBase + "color-relief.json" },
           { label: "Topographic Relief", url: styleBase + "topo-relief.json" },
         ];
-        const savedIdx = parseInt(
-          localStorage.getItem("ocap-maplibre-style") ?? "0",
-          10,
-        ) || 0;
+        const savedIdx =
+          parseInt(
+            localStorage.getItem("ocap-maplibre-style") ?? "0",
+            10,
+          ) || 0;
         const initialStyle =
           styleCandidates[
             savedIdx >= 0 && savedIdx < styleCandidates.length ? savedIdx : 0
           ].url;
-
-        // Rewrite font glyph requests to the Go server's font endpoint
-        const transformRequest = (url: string, resourceType: string) => {
-          if (resourceType === "Glyphs") {
-            const match = url.match(/([^/]+)\/(\d+-\d+\.pbf)(?:\?|$)/);
-            if (match) {
-              return { url: fontsBaseURL + match[1] + "/" + match[2] };
-            }
-          }
-        };
 
         await import("@maplibre/maplibre-gl-leaflet");
         const mlLayer = (L as any).maplibreGL({
@@ -410,7 +435,8 @@ export class LeafletRenderer implements MapRenderer {
     );
 
     // Build tile layers based on available styles in map.json
-    const tileUrl = world.tileBaseUrl ?? "";
+    const rawTile = world.tileBaseUrl ?? "";
+    const tileUrl = rawTile.startsWith("http") ? rawTile : import.meta.env.BASE_URL + rawTile.replace(/^\//, "");
     const baseLayers: L.TileLayer[] = [];
     const tileOpts: L.TileLayerOptions = {
       maxNativeZoom: world.maxZoom,
@@ -713,11 +739,12 @@ export class LeafletRenderer implements MapRenderer {
     } else {
       // ICON shape — load actual marker image from server
       const isMagIcon = def.type.indexOf("magIcons") > -1;
+      const b = import.meta.env.BASE_URL;
       let iconUrl: string;
       if (isMagIcon) {
-        iconUrl = `images/markers/${def.type.toLowerCase()}.png`;
+        iconUrl = `${b}images/markers/${def.type.toLowerCase()}.png`;
       } else {
-        iconUrl = `images/markers/${def.type}/${def.color}.png`;
+        iconUrl = `${b}images/markers/${def.type}/${def.color}.png`;
       }
       const iconSize: [number, number] = def.size
         ? [def.size[0] * 35, def.size[1] * 35]
