@@ -3,26 +3,27 @@
 	"prefixURL": "",
 	"secret": "change-me",
 	"db": "data.db",
+	"data": "data",
+	"static": "",
 	"markers": "assets/markers",
 	"ammo": "assets/ammo",
 	"fonts": "assets/fonts",
 	"maps": "maps",
-	"data": "data",
-	"static": "",
 	"logger": false,
 	"customize": {
-		"websiteURL": "",
+		"disableKillCount": false,
+		"enabled": false,
+		"headerSubtitle": "",
+		"headerTitle": "",
 		"websiteLogo": "",
 		"websiteLogoSize": "32px",
-		"disableKillCount": false,
-		"headerTitle": "",
-		"headerSubtitle": ""
+		"websiteURL": ""
 	},
 	"conversion": {
-		"enabled": false,
-		"interval": "5m",
 		"batchSize": 1,
 		"chunkSize": 300,
+		"enabled": false,
+		"interval": "5m",
 		"retryFailed": false
 	}
 }
