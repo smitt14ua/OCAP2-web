@@ -33,7 +33,7 @@ import { registerShortcuts, unregisterShortcuts, leftPanelVisible } from "../ui/
  * by the route param, and disposes everything on unmount.
  */
 export function RecordingPlayback(): JSX.Element {
-  const params = useParams<{ id: string }>();
+  const params = useParams<{ id: string; name: string }>();
   const navigate = useNavigate();
   const api = new ApiClient();
   const renderer: MapRenderer = new LeafletRenderer();
@@ -156,6 +156,8 @@ export function RecordingPlayback(): JSX.Element {
   onMount(() => {
     registerShortcuts(engine);
 
+    // The :name param is purely cosmetic (for human-readable URLs).
+    // The operation is always fetched by :id; filename is derived from the response.
     const id = decodeURIComponent(params.id);
     void (async () => {
       try {
