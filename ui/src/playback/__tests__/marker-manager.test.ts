@@ -310,3 +310,305 @@ describe("MarkerManager.updateFrame keyframe skipping", () => {
     expect(renderer.updateBriefingMarker).toHaveBeenCalledTimes(2);
   });
 });
+
+// ─── MarkerManager.setSideFilter ───
+
+describe("MarkerManager.setSideFilter", () => {
+  it("only creates markers matching the active side", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers([
+      makeDef("mil_dot", { side: "WEST" }),
+      makeDef("mil_dot", { side: "EAST" }),
+    ]);
+
+    mgr.setSideFilter("WEST");
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledTimes(1);
+  });
+
+  it("always shows GLOBAL markers regardless of side filter", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers([
+      makeDef("mil_dot", { side: "GLOBAL" }),
+      makeDef("mil_dot", { side: "WEST" }),
+      makeDef("mil_dot", { side: "EAST" }),
+    ]);
+
+    mgr.setSideFilter("WEST");
+    mgr.updateFrame(0);
+    // GLOBAL + WEST = 2
+    expect(renderer.createBriefingMarker).toHaveBeenCalledTimes(2);
+  });
+
+  it("removes visible markers when switching to a different side", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers([
+      makeDef("mil_dot", { side: "WEST" }),
+      makeDef("mil_dot", { side: "EAST" }),
+    ]);
+
+    mgr.setSideFilter("WEST");
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledTimes(1);
+
+    // Switch to EAST — WEST marker should be removed
+    mgr.setSideFilter("EAST");
+    expect(renderer.removeBriefingMarker).toHaveBeenCalledTimes(1);
+
+    // EAST marker created on next updateFrame
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps GLOBAL markers when switching sides", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers([
+      makeDef("mil_dot", { side: "GLOBAL" }),
+      makeDef("mil_dot", { side: "WEST" }),
+    ]);
+
+    mgr.setSideFilter("WEST");
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledTimes(2);
+
+    // Switch to EAST — WEST removed, GLOBAL kept
+    mgr.setSideFilter("EAST");
+    expect(renderer.removeBriefingMarker).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows all markers when filter is null", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers([
+      makeDef("mil_dot", { side: "WEST" }),
+      makeDef("mil_dot", { side: "EAST" }),
+      makeDef("mil_dot", { side: "GUER" }),
+    ]);
+
+    mgr.setSideFilter(null);
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledTimes(3);
+  });
+
+  it("removes non-matching markers that were created before filter was set", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers([
+      makeDef("mil_dot", { side: "WEST" }),
+      makeDef("mil_dot", { side: "EAST" }),
+    ]);
+
+    // No filter — both created
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledTimes(2);
+
+    // Set filter — EAST removed immediately
+    mgr.setSideFilter("WEST");
+    expect(renderer.removeBriefingMarker).toHaveBeenCalledTimes(1);
+  });
+
+  it("is a no-op when setting the same side twice", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers([
+      makeDef("mil_dot", { side: "WEST" }),
+      makeDef("mil_dot", { side: "EAST" }),
+    ]);
+
+    mgr.setSideFilter("WEST");
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledTimes(1);
+
+    // Same side again — no removal, no re-creation
+    mgr.setSideFilter("WEST");
+    expect(renderer.removeBriefingMarker).not.toHaveBeenCalled();
+  });
+});
+
+// ─── MarkerManager layer classification ───
+
+describe("MarkerManager layer classification", () => {
+  it("assigns system markers (player=-1) to systemMarkers layer", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers([makeDef("mil_dot", { player: -1, side: "GLOBAL" })]);
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledWith(
+      expect.objectContaining({ layer: "systemMarkers" }),
+    );
+  });
+
+  it("assigns projectile markers (magIcons on GLOBAL) to projectileMarkers layer", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers([
+      makeDef("magIcons/gear_M67.paa", { player: 1, side: "GLOBAL" }),
+    ]);
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledWith(
+      expect.objectContaining({ layer: "projectileMarkers" }),
+    );
+  });
+
+  it("assigns Minefield on GLOBAL to projectileMarkers layer", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers([
+      makeDef("Minefield", { player: 1, side: "GLOBAL" }),
+    ]);
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledWith(
+      expect.objectContaining({ layer: "projectileMarkers" }),
+    );
+  });
+
+  it("assigns mil_triangle on GLOBAL to projectileMarkers layer", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers([
+      makeDef("mil_triangle", { player: 1, side: "GLOBAL" }),
+    ]);
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledWith(
+      expect.objectContaining({ layer: "projectileMarkers" }),
+    );
+  });
+
+  it("assigns player-owned non-GLOBAL ICON markers to briefingMarkers layer", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers([makeDef("mil_dot", { player: 1, side: "WEST" })]);
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledWith(
+      expect.objectContaining({ layer: "briefingMarkers" }),
+    );
+  });
+
+  it("assigns non-ICON shapes to briefingMarkers layer regardless of player/side", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers([
+      makeDef("mil_dot", { shape: "RECTANGLE", player: -1, side: "GLOBAL" }),
+    ]);
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledWith(
+      expect.objectContaining({ layer: "briefingMarkers" }),
+    );
+  });
+});
+
+// ─── MarkerManager popup text (ICON markers) ───
+
+describe("MarkerManager ICON marker popup text", () => {
+  const entityLookup = (id: number) => {
+    const names: Record<number, string> = { 1: "Kevin", 2: "Anna" };
+    return names[id] ?? null;
+  };
+
+  it("system marker (player=-1) uses just the text", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers(
+      [makeDef("mil_dot", { player: -1, text: "Objective Alpha" })],
+      entityLookup,
+    );
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "Objective Alpha" }),
+    );
+  });
+
+  it("system marker with no text passes undefined", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers(
+      [makeDef("mil_dot", { player: -1 })],
+      entityLookup,
+    );
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledWith(
+      expect.objectContaining({ text: undefined }),
+    );
+  });
+
+  it("player-owned non-GLOBAL marker shows SIDE PlayerName Text", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers(
+      [makeDef("mil_dot", { player: 1, side: "WEST", text: "80,4" })],
+      entityLookup,
+    );
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "WEST Kevin 80,4" }),
+    );
+  });
+
+  it("player-owned GLOBAL marker shows just text", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers(
+      [makeDef("mil_dot", { player: 1, side: "GLOBAL", text: "Supply" })],
+      entityLookup,
+    );
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "Supply" }),
+    );
+  });
+
+  it("projectile marker (magIcons) on GLOBAL shows PlayerName Text", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers(
+      [makeDef("magIcons/gear_M67.paa", { player: 1, side: "GLOBAL", text: "" })],
+      entityLookup,
+    );
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "Kevin" }),
+    );
+  });
+
+  it("objective marker (Terminal in text) shows just text", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers(
+      [makeDef("mil_dot", { player: 1, side: "WEST", text: "Terminal Alpha" })],
+      entityLookup,
+    );
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "Terminal Alpha" }),
+    );
+  });
+
+  it("system marker type on GLOBAL has no popup text", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers(
+      [makeDef("ObjectMarker", { player: 1, side: "GLOBAL", text: "border" })],
+      entityLookup,
+    );
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledWith(
+      expect.objectContaining({ text: undefined }),
+    );
+  });
+
+  it("works without entity lookup (no names)", () => {
+    const renderer = makeStubRenderer();
+    const mgr = new MarkerManager(renderer);
+    mgr.loadMarkers(
+      [makeDef("mil_dot", { player: 1, side: "WEST", text: "Mark" })],
+    );
+    mgr.updateFrame(0);
+    expect(renderer.createBriefingMarker).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "WEST Mark" }),
+    );
+  });
+});

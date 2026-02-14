@@ -48,11 +48,15 @@ interface InternalMarkerHandle {
   iconKey: string;
   /** Track current popup name to avoid unnecessary setContent calls (which retrigger layout). */
   popupName: string;
+  /** Per-entity state for popup visibility — kept in sync by updateEntityMarker. */
+  isPlayer: boolean;
+  isInVehicle: boolean;
 }
 
 interface InternalBriefingHandle {
   layer: L.Layer;
   shape: "ICON" | "ELLIPSE" | "RECTANGLE" | "POLYLINE";
+  layerKey: "briefingMarkers" | "systemMarkers" | "projectileMarkers";
   size?: [number, number];
   patternId?: string;
   shapeOpts?: { stroke: boolean; fill: boolean; fillOpacity: number };
@@ -139,6 +143,7 @@ export class LeafletRenderer implements MapRenderer {
   private useMapLibreMode = false;
 
   private nameDisplayMode: "players" | "all" | "none" = "players";
+  private hideMarkerPopups = false;
 
   private layers: Record<LayerGroupKey, L.LayerGroup> = {
     entities: L.layerGroup(),
@@ -215,12 +220,19 @@ export class LeafletRenderer implements MapRenderer {
       group.addTo(this.map);
     }
 
+    // Set initial popup visibility based on starting zoom
+    const hideThreshold = this.useMapLibreMode ? 14 : 4;
+    this.hideMarkerPopups = this.map.getZoom() <= hideThreshold;
+
     // Forward Leaflet events
     this.map.on("zoomstart", () => {
       setZooming(container, true);
     });
     this.map.on("zoomend", () => {
       setZooming(container, false);
+      const hideThreshold = this.useMapLibreMode ? 14 : 4;
+      this.hideMarkerPopups = this.map.getZoom() <= hideThreshold;
+      this.refreshPopupVisibility();
       this.fireEvent("zoom", this.map.getZoom());
     });
     this.map.on("dragstart", () => {
@@ -711,18 +723,24 @@ export class LeafletRenderer implements MapRenderer {
       autoPan: false,
       autoClose: false,
       closeButton: false,
-      className: "leaflet-popup-unit",
+      className: opts.iconType === "man" ? "leaflet-popup-unit" : "leaflet-popup-vehicle",
     });
     popup.setContent(opts.name);
     marker.bindPopup(popup).openPopup();
 
     const iconKey = `${opts.iconType}:${opts.side}:1`;
-    return wrapMarker({ marker, id, lastDirection: 0, iconKey, popupName: opts.name });
+    const internal: InternalMarkerHandle = { marker, id, lastDirection: 0, iconKey, popupName: opts.name, isPlayer: opts.isPlayer, isInVehicle: false };
+    (marker as any)._ocapInternal = internal;
+    return wrapMarker(internal);
   }
 
   updateEntityMarker(handle: MarkerHandle, state: EntityMarkerState): void {
     const internal = unwrapMarker(handle);
     const marker = internal.marker;
+
+    // Keep per-entity state in sync for refreshPopupVisibility
+    internal.isPlayer = state.isPlayer;
+    internal.isInVehicle = state.isInVehicle;
 
     // Update position
     const latlng = this.armaToLatLng(state.position);
@@ -754,6 +772,8 @@ export class LeafletRenderer implements MapRenderer {
       if (popupEl) {
         let display = "";
         if (state.isInVehicle) {
+          display = "none";
+        } else if (this.hideMarkerPopups) {
           display = "none";
         } else if (this.nameDisplayMode === "none") {
           display = "none";
@@ -817,8 +837,9 @@ export class LeafletRenderer implements MapRenderer {
       layer = L.polygon([], polygonOpts);
 
       if (patternId) {
-        layer.addTo(this.layers.briefingMarkers);
-        return wrapBriefing({ layer, shape: def.shape, size: def.size, patternId, shapeOpts });
+        const layerKey = def.layer ?? "briefingMarkers";
+        layer.addTo(this.layers[layerKey]);
+        return wrapBriefing({ layer, shape: def.shape, layerKey, size: def.size, patternId, shapeOpts });
       }
     } else {
       // ICON shape — load actual marker image from server
@@ -839,10 +860,28 @@ export class LeafletRenderer implements MapRenderer {
         interactive: false,
         rotationOrigin: "50% 50%",
       } as any);
+
+      // Add popup with marker text (matching old frontend's marker popup behaviour)
+      if (def.text) {
+        const popup = L.popup({
+          autoPan: false,
+          autoClose: false,
+          closeButton: false,
+          className: "leaflet-popup-unit",
+        });
+        popup.setContent(def.text);
+        (layer as L.Marker).bindPopup(popup);
+      }
     }
 
-    layer.addTo(this.layers.briefingMarkers);
-    return wrapBriefing({ layer, shape: def.shape, size: def.size, shapeOpts });
+    const layerKey = def.layer ?? "briefingMarkers";
+    layer.addTo(this.layers[layerKey]);
+
+    // Open popup after adding to map so the DOM element exists
+    if (def.text && layer instanceof L.Marker) {
+      layer.openPopup();
+    }
+    return wrapBriefing({ layer, shape: def.shape, layerKey, size: def.size, shapeOpts });
   }
 
   updateBriefingMarker(
@@ -862,7 +901,9 @@ export class LeafletRenderer implements MapRenderer {
       const [cx, cy] = state.position;
       const rx = internal.size?.[0] ?? 100;
       const ry = internal.size?.[1] ?? 100;
-      const rad = state.direction * (Math.PI / 180);
+      // Negate angle: Arma directions are clockwise from north,
+      // standard rotation matrix is counter-clockwise
+      const rad = -state.direction * (Math.PI / 180);
       const cos = Math.cos(rad);
       const sin = Math.sin(rad);
 
@@ -886,7 +927,9 @@ export class LeafletRenderer implements MapRenderer {
       const [cx, cy] = state.position;
       const sx = internal.size?.[0] ?? 100;
       const sy = internal.size?.[1] ?? 100;
-      const rad = state.direction * (Math.PI / 180);
+      // Negate angle: Arma directions are clockwise from north,
+      // standard rotation matrix is counter-clockwise
+      const rad = -state.direction * (Math.PI / 180);
       const cos = Math.cos(rad);
       const sin = Math.sin(rad);
 
@@ -913,7 +956,7 @@ export class LeafletRenderer implements MapRenderer {
 
   removeBriefingMarker(handle: BriefingMarkerHandle): void {
     const internal = unwrapBriefing(handle);
-    this.layers.briefingMarkers.removeLayer(internal.layer);
+    this.layers[internal.layerKey].removeLayer(internal.layer);
     if (internal.patternId) {
       removePattern(this.svgDefs, internal.patternId);
     }
@@ -1122,6 +1165,34 @@ export class LeafletRenderer implements MapRenderer {
 
   setNameDisplayMode(mode: "players" | "all" | "none"): void {
     this.nameDisplayMode = mode;
+    this.refreshPopupVisibility();
+  }
+
+  /**
+   * Re-evaluate popup visibility on all entity markers.
+   * Called when zoom or nameDisplayMode changes.
+   */
+  private refreshPopupVisibility(): void {
+    this.layers.entities.eachLayer((layer) => {
+      const marker = layer as L.Marker;
+      const popup = marker.getPopup();
+      if (!popup) return;
+      const popupEl = popup.getElement();
+      if (!popupEl) return;
+
+      const internal = (marker as any)._ocapInternal as InternalMarkerHandle | undefined;
+      let display = "";
+      if (internal?.isInVehicle) {
+        display = "none";
+      } else if (this.hideMarkerPopups) {
+        display = "none";
+      } else if (this.nameDisplayMode === "none") {
+        display = "none";
+      } else if (this.nameDisplayMode === "players" && internal && !internal.isPlayer) {
+        display = "none";
+      }
+      popupEl.style.display = display;
+    });
   }
 
   // ==================== Map styles ====================

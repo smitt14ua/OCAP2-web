@@ -146,8 +146,73 @@ export function findPositionIndex(
 
 // ─── Marker state tracking ───
 
+const SYSTEM_MARKER_TYPES = ["ObjectMarker", "moduleCoverMap", "safeStart"];
+
+const PROJECTILE_TYPES = ["Minefield", "mil_triangle"];
+
+/**
+ * Determine which layer group an ICON marker belongs to,
+ * matching the old frontend's _createMarker layer assignment.
+ */
+function classifyMarkerLayer(
+  def: MarkerDef,
+): "briefingMarkers" | "systemMarkers" | "projectileMarkers" {
+  if (def.shape !== "ICON") return "briefingMarkers";
+
+  // No player — system marker
+  if (def.player === -1) return "systemMarkers";
+
+  // Projectiles on GLOBAL side
+  if (
+    (def.type.includes("magIcons") || PROJECTILE_TYPES.includes(def.type)) &&
+    def.side === "GLOBAL"
+  ) {
+    return "projectileMarkers";
+  }
+
+  return "briefingMarkers";
+}
+
+/**
+ * Build popup text for an ICON marker, matching the old frontend's
+ * _createMarker popup text logic.
+ */
+function buildMarkerPopupText(
+  def: MarkerDef,
+  getEntityName: (id: number) => string | null,
+): string {
+  if (def.shape !== "ICON") return "";
+  const text = def.text ?? "";
+
+  // No player — system marker
+  if (def.player === -1) return text;
+
+  const playerName = getEntityName(def.player) ?? "";
+
+  // Objectives (Terminal, Sector)
+  if (text.includes("Terminal") || text.includes("Sector")) return text;
+
+  if (def.side === "GLOBAL") {
+    // System marker types on GLOBAL — no popup
+    if (SYSTEM_MARKER_TYPES.includes(def.type)) return "";
+
+    // Projectiles (magIcons, Minefield, mil_triangle) on GLOBAL
+    if (def.type.includes("magIcons") || PROJECTILE_TYPES.includes(def.type)) {
+      return [playerName, text].filter(Boolean).join(" ");
+    }
+
+    // Other GLOBAL markers
+    return text;
+  }
+
+  // Normal player marks (non-GLOBAL side)
+  return [def.side, playerName, text].filter(Boolean).join(" ");
+}
+
 interface TrackedMarker {
   def: MarkerDef;
+  popupText: string;
+  layer: "briefingMarkers" | "systemMarkers" | "projectileMarkers";
   handle: BriefingMarkerHandle | null;
   /** Last applied position index — skip update when unchanged. */
   lastPosIndex: number;
@@ -160,9 +225,34 @@ interface TrackedMarker {
 export class MarkerManager {
   private markers: TrackedMarker[] = [];
   private renderer: MapRenderer;
+  private sideFilter: string | null = null;
 
   constructor(renderer: MapRenderer) {
     this.renderer = renderer;
+  }
+
+  /**
+   * Set which side's markers are visible.
+   * Markers matching `side` or "GLOBAL" are shown; others are hidden.
+   * Pass `null` to show all markers.
+   */
+  setSideFilter(side: string | null): void {
+    if (this.sideFilter === side) return;
+    this.sideFilter = side;
+
+    // Remove markers that no longer match the filter
+    for (const tracked of this.markers) {
+      if (tracked.handle && !this.matchesSideFilter(tracked.def.side)) {
+        this.renderer.removeBriefingMarker(tracked.handle);
+        tracked.handle = null;
+        tracked.lastPosIndex = -1;
+      }
+    }
+  }
+
+  private matchesSideFilter(markerSide: string): boolean {
+    if (this.sideFilter === null) return true;
+    return markerSide === this.sideFilter || markerSide === "GLOBAL";
   }
 
   /**
@@ -170,8 +260,12 @@ export class MarkerManager {
    * Filters out marker types that should not be rendered
    * (matching the old frontend's creation-time filtering).
    */
-  loadMarkers(defs: MarkerDef[]): void {
+  loadMarkers(
+    defs: MarkerDef[],
+    getEntityName?: (id: number) => string | null,
+  ): void {
     this.clear();
+    const lookup = getEntityName ?? (() => null);
 
     let skipped = 0;
     for (const def of defs) {
@@ -181,7 +275,9 @@ export class MarkerManager {
         continue;
       }
 
-      this.markers.push({ def, handle: null, lastPosIndex: -1 });
+      const popupText = buildMarkerPopupText(def, lookup);
+      const layer = classifyMarkerLayer(def);
+      this.markers.push({ def, popupText, layer, handle: null, lastPosIndex: -1 });
     }
 
     console.log(
@@ -202,6 +298,16 @@ export class MarkerManager {
       );
 
       if (posIndex >= 0) {
+        // Skip markers that don't match the active side filter
+        if (!this.matchesSideFilter(tracked.def.side)) {
+          if (tracked.handle) {
+            this.renderer.removeBriefingMarker(tracked.handle);
+            tracked.handle = null;
+            tracked.lastPosIndex = -1;
+          }
+          continue;
+        }
+
         // Skip update if the marker is already showing this keyframe
         if (tracked.handle && posIndex === tracked.lastPosIndex) {
           continue;
@@ -215,10 +321,11 @@ export class MarkerManager {
             shape: tracked.def.shape,
             type: tracked.def.type,
             color: tracked.def.color,
-            text: tracked.def.text,
+            text: tracked.popupText || undefined,
             side: tracked.def.side,
             size: tracked.def.size,
             brush: tracked.def.brush,
+            layer: tracked.layer,
           };
           tracked.handle = this.renderer.createBriefingMarker(briefingDef);
         }
