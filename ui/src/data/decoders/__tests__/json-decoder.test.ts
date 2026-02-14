@@ -72,6 +72,65 @@ describe("JsonDecoder.decodeManifest", () => {
     expect(entity.role).toBe("Rifleman");
   });
 
+  it("preserves Z coordinate in unit positions", () => {
+    const data = {
+      worldName: "Altis",
+      missionName: "Op",
+      endFrame: 10,
+      captureDelay: 1,
+      entities: [
+        {
+          id: 1,
+          type: "unit",
+          name: "Pilot",
+          side: "WEST",
+          startFrameNum: 0,
+          positions: [
+            [[100, 200, 50.5], 0, 1, 0, "Pilot", 1],   // Z = 50.5
+            [[100, 200, 0], 0, 1, 0, "Pilot", 1],       // Z = 0
+            [[100, 200], 0, 1, 0, "Pilot", 1],           // no Z
+          ],
+        },
+      ],
+    };
+
+    const manifest = decoder.decodeManifest(toBuffer(data));
+    const positions = manifest.entities[0].positions!;
+
+    expect(positions[0].position).toEqual([100, 200, 50.5]);
+    expect(positions[1].position).toEqual([100, 200, 0]);
+    expect(positions[2].position).toEqual([100, 200]);
+  });
+
+  it("preserves Z coordinate in vehicle positions", () => {
+    const data = {
+      worldName: "Altis",
+      missionName: "Op",
+      endFrame: 10,
+      captureDelay: 1,
+      entities: [
+        {
+          id: 5,
+          type: "vehicle",
+          name: "Ghost Hawk",
+          side: "WEST",
+          startFrameNum: 0,
+          class: "heli",
+          positions: [
+            [[1000, 2000, 150], 45, 1, [10, 11]],  // Z = 150
+            [[1010, 2010], 50, 1, [10]],             // no Z
+          ],
+        },
+      ],
+    };
+
+    const manifest = decoder.decodeManifest(toBuffer(data));
+    const positions = manifest.entities[0].positions!;
+
+    expect(positions[0].position).toEqual([1000, 2000, 150]);
+    expect(positions[1].position).toEqual([1010, 2010]);
+  });
+
   it("detects isInVehicle from vehicle entity ID (not just boolean 1)", () => {
     // In legacy JSON, field[3] for units is 0 (not in vehicle)
     // or a vehicle entity ID (e.g. 17) when riding in that vehicle

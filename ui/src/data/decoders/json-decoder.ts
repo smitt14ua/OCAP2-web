@@ -78,6 +78,10 @@ const MARKER_SIDE_MAP: string[] = ["GLOBAL", "EAST", "WEST", "GUER", "CIV"];
 
 // ───────── Conversion helpers ─────────
 
+function toArmaCoord(pos: number[]): ArmaCoord {
+  return pos.length > 2 ? [pos[0], pos[1], pos[2]] : [pos[0], pos[1]];
+}
+
 function mapEntityType(rawType: string): EntityType {
   switch (rawType) {
     case "unit":
@@ -132,7 +136,7 @@ function convertUnitPosition(frame: unknown[]): EntityState {
   const name = typeof frame[4] === "string" ? frame[4] : undefined;
   const isPlayer = frame[5] === 1 || frame[5] === true;
   return {
-    position: [pos[0], pos[1]] as ArmaCoord,
+    position: toArmaCoord(pos),
     direction: dir,
     alive,
     isInVehicle,
@@ -148,7 +152,7 @@ function convertVehiclePosition(frame: unknown[]): EntityState {
   const alive = (frame[2] as AliveState) ?? 1;
   const crewIds = Array.isArray(frame[3]) ? (frame[3] as number[]) : undefined;
   return {
-    position: [pos[0], pos[1]] as ArmaCoord,
+    position: toArmaCoord(pos),
     direction: dir,
     alive,
     crewIds,
