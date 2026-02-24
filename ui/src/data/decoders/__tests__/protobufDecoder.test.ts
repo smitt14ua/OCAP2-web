@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ProtobufDecoder } from "../protobuf-decoder";
+import { ProtobufDecoder } from "../protobufDecoder";
 
 import {
   Manifest as PbManifest,
@@ -12,7 +12,7 @@ import {
 
 function encodePb<T>(msg: { encode: (m: T) => { finish: () => Uint8Array }; fromPartial: (o: any) => T }, data: any): ArrayBuffer {
   const bytes = msg.encode(msg.fromPartial(data)).finish();
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
 // ─── Manifest decoding tests ───

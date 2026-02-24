@@ -4,7 +4,7 @@ import { Router, Route, useLocation } from "@solidjs/router";
 import { I18nProvider } from "../../../hooks/useLocale";
 import { CustomizeProvider } from "../../../hooks/useCustomize";
 import { AuthProvider } from "../../../hooks/useAuth";
-import { setAuthToken } from "../../../data/api-client";
+import { setAuthToken } from "../../../data/apiClient";
 import { MissionSelector } from "..";
 import type { Operation } from "../../../data/types";
 
@@ -907,8 +907,8 @@ describe("MissionSelector (Admin)", () => {
     await vi.waitFor(() => {
       const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
       const retryCall = calls.find(
-        ([url, init]: [string, RequestInit?]) =>
-          url.includes("/api/v1/operations/6/retry") && init?.method === "POST",
+        (call: unknown[]) =>
+          (call[0] as string).includes("/api/v1/operations/6/retry") && (call[1] as RequestInit | undefined)?.method === "POST",
       );
       expect(retryCall).toBeDefined();
     });
@@ -955,8 +955,8 @@ describe("MissionSelector (Admin)", () => {
     await vi.waitFor(() => {
       const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
       const uploadCall = calls.find(
-        ([url, init]: [string, RequestInit?]) =>
-          url.includes("/api/v1/operations/add") && init?.method === "POST",
+        (call: unknown[]) =>
+          (call[0] as string).includes("/api/v1/operations/add") && (call[1] as RequestInit | undefined)?.method === "POST",
       );
       expect(uploadCall).toBeDefined();
     });
@@ -1199,8 +1199,8 @@ describe("MissionSelector (Admin)", () => {
     await vi.waitFor(() => {
       const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
       const uploadCall = calls.find(
-        ([url, init]: [string, RequestInit?]) =>
-          url.includes("/api/v1/operations/add") && init?.method === "POST",
+        (call: unknown[]) =>
+          (call[0] as string).includes("/api/v1/operations/add") && (call[1] as RequestInit | undefined)?.method === "POST",
       );
       expect(uploadCall).toBeDefined();
 
