@@ -34,7 +34,7 @@
 
 .tabs {
   display: flex;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: var(--border-subtle);
   padding: 0 4px;
   flex-shrink: 0;
 }
@@ -205,7 +205,7 @@
 }
 
 .unitRow:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-interactive);
 }
 
 .unitRowSelected {
@@ -251,7 +251,7 @@
 .unitAiBadge {
   font-size: 9px;
   color: var(--text-dimmest);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-interactive);
   padding: 1px 4px;
   border-radius: 3px;
 }
@@ -289,7 +289,7 @@
 .filterInput {
   flex: 1;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: var(--border-subtle);
   border-radius: 6px;
   padding: 6px 10px;
   color: var(--text-secondary);
@@ -303,7 +303,7 @@
 }
 
 .filterInput:focus {
-  border-color: rgba(74, 158, 255, 0.3);
+  border-color: var(--focus-ring);
 }
 
 .filterToggle {
@@ -321,7 +321,7 @@
 }
 
 .filterToggleInactive {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-interactive);
   color: var(--text-dimmer);
 }
 
@@ -341,7 +341,7 @@
 }
 
 .eventRow:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--bg-interactive);
 }
 
 .eventBorder {
