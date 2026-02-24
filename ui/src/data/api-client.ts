@@ -17,6 +17,10 @@ export interface BuildInfo {
   BuildDate: string;
 }
 
+export interface AuthState {
+  authenticated: boolean;
+}
+
 // ─── Error types ───
 
 export class ApiError extends Error {
@@ -77,6 +81,31 @@ export interface OperationFilters {
   name?: string;
   newer?: string;
   older?: string;
+}
+
+// ─── API Client ───
+
+// ─── JWT token store ───
+
+const TOKEN_KEY = "ocap_token";
+
+let authToken: string | null = sessionStorage.getItem(TOKEN_KEY);
+
+export function setAuthToken(token: string | null): void {
+  authToken = token;
+  if (token) {
+    sessionStorage.setItem(TOKEN_KEY, token);
+  } else {
+    sessionStorage.removeItem(TOKEN_KEY);
+  }
+}
+
+export function getAuthToken(): string | null {
+  return authToken;
+}
+
+function authHeaders(): Record<string, string> {
+  return authToken ? { Authorization: `Bearer ${authToken}` } : {};
 }
 
 // ─── API Client ───
@@ -253,6 +282,121 @@ export class ApiClient {
     const idx = String(chunkIndex).padStart(4, "0");
     const url = `${this.baseUrl}/data/${encodeURIComponent(filename)}/chunks/${idx}.pb`;
     return this.fetchBuffer(url);
+  }
+
+  // ─── Auth methods ───
+
+  async login(secret: string): Promise<AuthState> {
+    const response = await fetch(`${this.baseUrl}/api/v1/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret }),
+    });
+    if (!response.ok) {
+      throw new ApiError(
+        `Login failed: ${response.status} ${response.statusText}`,
+        response.status,
+        response.statusText,
+      );
+    }
+    const data = (await response.json()) as AuthState & { token?: string };
+    if (data.token) {
+      setAuthToken(data.token);
+    }
+    return { authenticated: data.authenticated };
+  }
+
+  async getMe(): Promise<AuthState> {
+    const response = await fetch(`${this.baseUrl}/api/v1/auth/me`, {
+      headers: authHeaders(),
+      cache: "no-cache",
+    });
+    if (!response.ok) {
+      return { authenticated: false };
+    }
+    return response.json() as Promise<AuthState>;
+  }
+
+  async logout(): Promise<void> {
+    await fetch(`${this.baseUrl}/api/v1/auth/logout`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    setAuthToken(null);
+  }
+
+  // ─── Admin operation methods ───
+
+  async editOperation(
+    id: string,
+    data: { missionName?: string; tag?: string; date?: string },
+  ): Promise<Operation> {
+    const response = await fetch(
+      `${this.baseUrl}/api/v1/operations/${encodeURIComponent(id)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify(data),
+      },
+    );
+    if (!response.ok) {
+      throw new ApiError(
+        `Edit failed: ${response.status} ${response.statusText}`,
+        response.status,
+        response.statusText,
+      );
+    }
+    const raw = (await response.json()) as RawOperation;
+    return mapOperation(raw);
+  }
+
+  async deleteOperation(id: string): Promise<void> {
+    const response = await fetch(
+      `${this.baseUrl}/api/v1/operations/${encodeURIComponent(id)}`,
+      {
+        method: "DELETE",
+        headers: authHeaders(),
+      },
+    );
+    if (!response.ok) {
+      throw new ApiError(
+        `Delete failed: ${response.status} ${response.statusText}`,
+        response.status,
+        response.statusText,
+      );
+    }
+  }
+
+  async retryConversion(id: string): Promise<void> {
+    const response = await fetch(
+      `${this.baseUrl}/api/v1/operations/${encodeURIComponent(id)}/retry`,
+      {
+        method: "POST",
+        headers: authHeaders(),
+      },
+    );
+    if (!response.ok) {
+      throw new ApiError(
+        `Retry failed: ${response.status} ${response.statusText}`,
+        response.status,
+        response.statusText,
+      );
+    }
+  }
+
+  async uploadOperation(formData: FormData): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/api/v1/operations/add`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: formData,
+    });
+    if (!response.ok) {
+      throw new ApiError(
+        `Upload failed: ${response.status} ${response.statusText}`,
+        response.status,
+        response.statusText,
+      );
+    }
   }
 
   // ─── Internal fetch helpers ───

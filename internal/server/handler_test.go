@@ -1221,6 +1221,103 @@ func TestStoreOperation_InvalidMissionDuration(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestStoreOperation_CookieAuth(t *testing.T) {
+	dir := t.TempDir()
+	pathDB := filepath.Join(dir, "test.db")
+	dataDir := filepath.Join(dir, "data")
+	err := os.MkdirAll(dataDir, 0755)
+	require.NoError(t, err)
+
+	repo, err := NewRepoOperation(pathDB)
+	require.NoError(t, err)
+	defer repo.db.Close()
+
+	jwtMgr := NewJWTManager("test-secret", time.Hour)
+
+	hdlr := Handler{
+		repoOperation: repo,
+		jwt:           jwtMgr,
+		setting: Setting{
+			Secret: "test-secret",
+			Data:   dataDir,
+		},
+	}
+
+	t.Run("valid JWT token without secret succeeds", func(t *testing.T) {
+		token, err := jwtMgr.Create()
+		require.NoError(t, err)
+
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		// Deliberately omit the secret field
+		writer.WriteField("worldName", "altis")
+		writer.WriteField("missionName", "Cookie Upload Test")
+		writer.WriteField("missionDuration", "3600")
+		writer.WriteField("filename", "cookie_upload_test")
+
+		fileWriter, err := writer.CreateFormFile("file", "cookie_upload_test.json.gz")
+		require.NoError(t, err)
+		gw := gzip.NewWriter(fileWriter)
+		gw.Write([]byte(`{"test": "cookie auth"}`))
+		gw.Close()
+		writer.Close()
+
+		e := echo.New()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/operations/add", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+
+		err = hdlr.StoreOperation(c)
+		assert.NoError(t, err)
+		assert.Equal(t, http.StatusOK, rec.Code)
+
+		// Verify file was created
+		_, err = os.Stat(filepath.Join(dataDir, "cookie_upload_test.json.gz"))
+		assert.NoError(t, err)
+	})
+
+	t.Run("invalid JWT token without secret fails", func(t *testing.T) {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		writer.WriteField("worldName", "altis")
+		writer.WriteField("missionName", "Bad Cookie Test")
+		writer.WriteField("missionDuration", "3600")
+		writer.WriteField("filename", "bad_cookie_test")
+		writer.Close()
+
+		e := echo.New()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/operations/add", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.Header.Set("Authorization", "Bearer invalid-token")
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+
+		err := hdlr.StoreOperation(c)
+		assert.Equal(t, echo.ErrForbidden, err)
+	})
+
+	t.Run("no secret and no token fails", func(t *testing.T) {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		writer.WriteField("worldName", "altis")
+		writer.WriteField("missionName", "No Auth Test")
+		writer.WriteField("missionDuration", "3600")
+		writer.WriteField("filename", "no_auth_test")
+		writer.Close()
+
+		e := echo.New()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/operations/add", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+
+		err := hdlr.StoreOperation(c)
+		assert.Equal(t, echo.ErrForbidden, err)
+	})
+}
+
 func TestStoreOperation_WrongSecret(t *testing.T) {
 	dir := t.TempDir()
 	pathDB := filepath.Join(dir, "test.db")

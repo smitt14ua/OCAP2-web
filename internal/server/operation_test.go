@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -592,6 +593,59 @@ func TestSelectByStatus(t *testing.T) {
 	failed, err := repo.SelectByStatus(ctx, "failed")
 	assert.NoError(t, err)
 	assert.Len(t, failed, 1)
+}
+
+func TestUpdateOperation(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := NewRepoOperation(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	defer repo.db.Close()
+
+	ctx := t.Context()
+	op := &Operation{
+		WorldName: "altis", MissionName: "Original",
+		MissionDuration: 300, Filename: "test", Date: "2026-01-01", Tag: "TvT",
+	}
+	require.NoError(t, repo.Store(ctx, op))
+
+	err = repo.UpdateOperation(ctx, op.ID, "Renamed", "COOP", "2026-02-01")
+	require.NoError(t, err)
+
+	updated, err := repo.GetByID(ctx, fmt.Sprintf("%d", op.ID))
+	require.NoError(t, err)
+	assert.Equal(t, "Renamed", updated.MissionName)
+	assert.Equal(t, "COOP", updated.Tag)
+	assert.Equal(t, "2026-02-01", updated.Date)
+}
+
+func TestDeleteOperation(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := NewRepoOperation(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	defer repo.db.Close()
+
+	ctx := t.Context()
+	op := &Operation{
+		WorldName: "altis", MissionName: "ToDelete",
+		MissionDuration: 300, Filename: "to_delete", Date: "2026-01-01",
+	}
+	require.NoError(t, repo.Store(ctx, op))
+
+	err = repo.Delete(ctx, op.ID)
+	require.NoError(t, err)
+
+	_, err = repo.GetByID(ctx, fmt.Sprintf("%d", op.ID))
+	assert.Error(t, err) // Should not be found
+}
+
+func TestDeleteOperation_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := NewRepoOperation(filepath.Join(dir, "test.db"))
+	require.NoError(t, err)
+	defer repo.db.Close()
+
+	err = repo.Delete(t.Context(), 999)
+	assert.ErrorIs(t, err, ErrNotFound)
 }
 
 func TestResetConversionStatus(t *testing.T) {

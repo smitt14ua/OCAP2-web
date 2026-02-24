@@ -38,6 +38,7 @@ type Handler struct {
 	repoMarker        *RepoMarker
 	repoAmmo          *RepoAmmo
 	setting           Setting
+	jwt               *JWTManager
 	conversionTrigger ConversionTrigger // optional, nil if conversion disabled
 	staticFS          fs.FS             // optional, nil disables static file serving
 }
@@ -78,6 +79,8 @@ func NewHandler(
 	for _, opt := range opts {
 		opt(&hdlr)
 	}
+
+	hdlr.jwt = NewJWTManager(setting.Secret, setting.Admin.SessionTTL)
 
 	e.Use(hdlr.errorHandler)
 
@@ -140,6 +143,18 @@ func NewHandler(
 		hdlr.GetMapTitle,
 		hdlr.cacheControl(CacheDuration),
 	)
+
+	// Auth endpoints
+	g.POST("/api/v1/auth/login", hdlr.Login)
+	g.GET("/api/v1/auth/me", hdlr.GetMe)
+	g.POST("/api/v1/auth/logout", hdlr.Logout)
+
+	// Admin routes (require JWT)
+	admin := g.Group("", hdlr.requireAdmin)
+	admin.PATCH("/api/v1/operations/:id", hdlr.EditOperation)
+	admin.DELETE("/api/v1/operations/:id", hdlr.DeleteOperation)
+	admin.POST("/api/v1/operations/:id/retry", hdlr.RetryConversion)
+
 	if hdlr.staticFS != nil {
 		// Serve the SPA frontend with fallback to index.html for client-side routing
 		staticHandler := spaFileServer(hdlr.staticFS, prefixURL)
@@ -245,7 +260,10 @@ func (h *Handler) StoreOperation(c echo.Context) error {
 	)
 
 	if secret != h.setting.Secret {
-		return echo.ErrForbidden
+		// Fall back to JWT Bearer token auth (admin UI uploads)
+		if token := bearerToken(c); token == "" || h.jwt.Validate(token) != nil {
+			return echo.ErrForbidden
+		}
 	}
 
 	filename := filepath.Base(c.FormValue("filename"))

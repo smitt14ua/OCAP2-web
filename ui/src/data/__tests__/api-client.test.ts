@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { ApiClient, ApiError } from "../api-client";
+import { ApiClient, ApiError, setAuthToken, getAuthToken } from "../api-client";
 import type { CustomizeConfig, BuildInfo } from "../api-client";
 
 // ─── Helpers ───
@@ -48,6 +48,7 @@ function mockFetchError(status: number, statusText: string): void {
 describe("ApiClient", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    setAuthToken(null);
   });
 
   // ─── Constructor & URL construction ───
@@ -282,6 +283,212 @@ describe("ApiClient", () => {
         "/aar/data/op-123/chunks/0005.pb",
       );
       expect(new Uint8Array(result)).toEqual(new Uint8Array([0xaa, 0xbb]));
+    });
+  });
+
+  // ─── login ───
+
+  describe("login", () => {
+    it("posts secret, stores token, and returns auth state", async () => {
+      mockFetchJson({ authenticated: true, token: "jwt-test-token" });
+
+      const client = new ApiClient("/aar/");
+      const result = await client.login("my-secret");
+
+      expect(fetch).toHaveBeenCalledWith("/aar/api/v1/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: "my-secret" }),
+      });
+      expect(result).toEqual({ authenticated: true });
+      expect(getAuthToken()).toBe("jwt-test-token");
+    });
+
+    it("throws ApiError on invalid credentials", async () => {
+      mockFetchError(401, "Unauthorized");
+
+      const client = new ApiClient("/aar/");
+      await expect(client.login("wrong")).rejects.toThrow(ApiError);
+    });
+  });
+
+  // ─── getMe ───
+
+  describe("getMe", () => {
+    it("returns auth state when authenticated", async () => {
+      setAuthToken("my-jwt");
+      mockFetchJson({ authenticated: true });
+
+      const client = new ApiClient("/aar/");
+      const result = await client.getMe();
+
+      expect(fetch).toHaveBeenCalledWith("/aar/api/v1/auth/me", {
+        headers: { Authorization: "Bearer my-jwt" },
+        cache: "no-cache",
+      });
+      expect(result).toEqual({ authenticated: true });
+    });
+
+    it("sends no auth header when no token stored", async () => {
+      mockFetchJson({ authenticated: false });
+
+      const client = new ApiClient("/aar/");
+      const result = await client.getMe();
+
+      expect(fetch).toHaveBeenCalledWith("/aar/api/v1/auth/me", {
+        headers: {},
+        cache: "no-cache",
+      });
+      expect(result).toEqual({ authenticated: false });
+    });
+
+    it("returns {authenticated: false} on non-OK response", async () => {
+      mockFetchError(401, "Unauthorized");
+
+      const client = new ApiClient("/aar/");
+      const result = await client.getMe();
+
+      expect(result).toEqual({ authenticated: false });
+    });
+  });
+
+  // ─── logout ───
+
+  describe("logout", () => {
+    it("posts to logout endpoint and clears token", async () => {
+      setAuthToken("my-jwt");
+      mockFetchJson(null);
+
+      const client = new ApiClient("/aar/");
+      await client.logout();
+
+      expect(fetch).toHaveBeenCalledWith("/aar/api/v1/auth/logout", {
+        method: "POST",
+        headers: { Authorization: "Bearer my-jwt" },
+      });
+      expect(getAuthToken()).toBeNull();
+    });
+  });
+
+  // ─── editOperation ───
+
+  describe("editOperation", () => {
+    it("patches operation and returns mapped result", async () => {
+      setAuthToken("admin-jwt");
+      mockFetchJson({
+        id: 42,
+        world_name: "Altis",
+        mission_name: "Updated",
+        mission_duration: 3600.5,
+        filename: "2024_01_01__updated.json",
+        date: "2024-01-01",
+        tag: "coop",
+      });
+
+      const client = new ApiClient("/aar/");
+      const result = await client.editOperation("42", {
+        missionName: "Updated",
+      });
+
+      expect(fetch).toHaveBeenCalledWith("/aar/api/v1/operations/42", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer admin-jwt" },
+        body: JSON.stringify({ missionName: "Updated" }),
+      });
+      expect(result).toEqual({
+        id: "42",
+        worldName: "Altis",
+        missionName: "Updated",
+        missionDuration: 3600.5,
+        filename: "2024_01_01__updated.json",
+        date: "2024-01-01",
+        tag: "coop",
+      });
+    });
+
+    it("throws ApiError on failure", async () => {
+      mockFetchError(403, "Forbidden");
+
+      const client = new ApiClient("/aar/");
+      await expect(
+        client.editOperation("42", { missionName: "X" }),
+      ).rejects.toThrow(ApiError);
+    });
+  });
+
+  // ─── deleteOperation ───
+
+  describe("deleteOperation", () => {
+    it("sends DELETE request with auth header", async () => {
+      setAuthToken("admin-jwt");
+      mockFetchJson(null);
+
+      const client = new ApiClient("/aar/");
+      await client.deleteOperation("42");
+
+      expect(fetch).toHaveBeenCalledWith("/aar/api/v1/operations/42", {
+        method: "DELETE",
+        headers: { Authorization: "Bearer admin-jwt" },
+      });
+    });
+
+    it("throws ApiError on failure", async () => {
+      mockFetchError(404, "Not Found");
+
+      const client = new ApiClient("/aar/");
+      await expect(client.deleteOperation("42")).rejects.toThrow(ApiError);
+    });
+  });
+
+  // ─── retryConversion ───
+
+  describe("retryConversion", () => {
+    it("posts retry request with auth header", async () => {
+      setAuthToken("admin-jwt");
+      mockFetchJson(null);
+
+      const client = new ApiClient("/aar/");
+      await client.retryConversion("42");
+
+      expect(fetch).toHaveBeenCalledWith("/aar/api/v1/operations/42/retry", {
+        method: "POST",
+        headers: { Authorization: "Bearer admin-jwt" },
+      });
+    });
+
+    it("throws ApiError on failure", async () => {
+      mockFetchError(500, "Internal Server Error");
+
+      const client = new ApiClient("/aar/");
+      await expect(client.retryConversion("42")).rejects.toThrow(ApiError);
+    });
+  });
+
+  // ─── uploadOperation ───
+
+  describe("uploadOperation", () => {
+    it("posts FormData with auth header", async () => {
+      setAuthToken("admin-jwt");
+      mockFetchJson(null);
+
+      const client = new ApiClient("/aar/");
+      const formData = new FormData();
+      formData.append("file", new Blob(["data"]), "mission.json");
+      await client.uploadOperation(formData);
+
+      expect(fetch).toHaveBeenCalledWith("/aar/api/v1/operations/add", {
+        method: "POST",
+        headers: { Authorization: "Bearer admin-jwt" },
+        body: formData,
+      });
+    });
+
+    it("throws ApiError on failure", async () => {
+      mockFetchError(413, "Payload Too Large");
+
+      const client = new ApiClient("/aar/");
+      const formData = new FormData();
+      await expect(client.uploadOperation(formData)).rejects.toThrow(ApiError);
     });
   });
 
