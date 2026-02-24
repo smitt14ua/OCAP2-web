@@ -286,29 +286,35 @@ describe("ApiClient", () => {
     });
   });
 
-  // ─── login ───
+  // ─── getSteamLoginUrl ───
 
-  describe("login", () => {
-    it("posts secret, stores token, and returns auth state", async () => {
-      mockFetchJson({ authenticated: true, token: "jwt-test-token" });
-
+  describe("getSteamLoginUrl", () => {
+    it("returns the Steam auth endpoint URL", () => {
       const client = new ApiClient("/aar/");
-      const result = await client.login("my-secret");
-
-      expect(fetch).toHaveBeenCalledWith("/aar/api/v1/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secret: "my-secret" }),
-      });
-      expect(result).toEqual({ authenticated: true });
-      expect(getAuthToken()).toBe("jwt-test-token");
+      expect(client.getSteamLoginUrl()).toBe("/aar/api/v1/auth/steam");
     });
 
-    it("throws ApiError on invalid credentials", async () => {
-      mockFetchError(401, "Unauthorized");
+    it("works with empty base URL", () => {
+      const client = new ApiClient();
+      expect(client.getSteamLoginUrl()).toBe("/api/v1/auth/steam");
+    });
+  });
 
-      const client = new ApiClient("/aar/");
-      await expect(client.login("wrong")).rejects.toThrow(ApiError);
+  // ─── consumeAuthToken ───
+
+  describe("consumeAuthToken", () => {
+    it("returns false when no auth_token param exists", () => {
+      const client = new ApiClient();
+      const params = new URLSearchParams("");
+      expect(client.consumeAuthToken(params)).toBe(false);
+      expect(getAuthToken()).toBeNull();
+    });
+
+    it("reads auth_token from params and stores in session", () => {
+      const client = new ApiClient();
+      const params = new URLSearchParams("auth_token=test-jwt-token");
+      expect(client.consumeAuthToken(params)).toBe(true);
+      expect(getAuthToken()).toBe("test-jwt-token");
     });
   });
 

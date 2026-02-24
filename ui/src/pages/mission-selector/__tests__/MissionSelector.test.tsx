@@ -571,6 +571,61 @@ describe("MissionSelector", () => {
     expect(container.textContent).toContain("2");
     expect(container.textContent).toContain("MAPS");
   });
+
+  // ── Auth error toast ──
+
+  it("auto-dismisses auth error toast after timeout", async () => {
+    vi.useFakeTimers();
+
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, search: "?auth_error=steam_denied", href: window.location.origin + "/?auth_error=steam_denied", pathname: "/" },
+      writable: true,
+      configurable: true,
+    });
+
+    const { container } = renderPage();
+
+    // Wait for toast to appear (flush microtasks with real timers temporarily)
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("Your Steam account is not authorized for admin access.");
+    });
+
+    // Advance past the 5s auto-dismiss timeout
+    vi.advanceTimersByTime(5000);
+
+    await vi.waitFor(() => {
+      expect(container.textContent).not.toContain("not authorized for admin access");
+    });
+
+    vi.useRealTimers();
+  });
+
+  it("shows auth error toast and dismisses on click", async () => {
+    // Mock location with auth_error param so AuthProvider picks it up
+    Object.defineProperty(window, "location", {
+      value: { ...window.location, search: "?auth_error=steam_denied", href: window.location.origin + "/?auth_error=steam_denied", pathname: "/" },
+      writable: true,
+      configurable: true,
+    });
+
+    const { container } = renderPage();
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("Your Steam account is not authorized for admin access.");
+    });
+
+    // Click the dismiss button on the toast (it's the button whose parent contains the error message)
+    const toastDiv = Array.from(container.querySelectorAll("div")).find(
+      (d) => d.textContent?.includes("not authorized for admin access"),
+    )!;
+    const dismissBtn = toastDiv.querySelector("button")!;
+    expect(dismissBtn).toBeDefined();
+    fireEvent.click(dismissBtn);
+
+    await vi.waitFor(() => {
+      expect(container.textContent).not.toContain("not authorized for admin access");
+    });
+  });
 });
 
 // ─── Admin tests ───
@@ -596,20 +651,8 @@ function mockAdminFetch(ops: Operation[]) {
     if (u.includes("/api/v1/auth/me")) {
       return Promise.resolve({
         ok: true, status: 200, statusText: "OK",
-        json: () => Promise.resolve({ authenticated: true }),
+        json: () => Promise.resolve({ authenticated: true, steamId: "76561198012345678", steamName: "TestPlayer", steamAvatar: "https://avatars.steamstatic.com/test.jpg" }),
       } as Response);
-    }
-
-    // Auth: login
-    if (u.includes("/api/v1/auth/login")) {
-      const body = JSON.parse((init?.body as string) || "{}");
-      if (body.secret === "correct-secret") {
-        return Promise.resolve({
-          ok: true, status: 200, statusText: "OK",
-          json: () => Promise.resolve({ authenticated: true, token: "new-jwt" }),
-        } as Response);
-      }
-      return Promise.resolve({ ok: false, status: 403, statusText: "Forbidden" } as Response);
     }
 
     // Auth: logout
@@ -699,12 +742,15 @@ describe("MissionSelector (Admin)", () => {
 
   // ── Auth UI ──
 
-  it("shows admin badge when authenticated", async () => {
+  it("shows admin badge with Steam profile when authenticated", async () => {
     const { findByTestId, container } = renderPage();
     await findByTestId("operation-1");
 
-    expect(container.textContent).toContain("Admin");
-    expect(container.textContent).toContain("ADMIN");
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("TestPlayer");
+      expect(container.textContent).toContain("ADMIN");
+      expect(container.querySelector("img[src='https://avatars.steamstatic.com/test.jpg']")).not.toBeNull();
+    });
   });
 
   it("shows sign-in button when not authenticated", async () => {
@@ -727,7 +773,7 @@ describe("MissionSelector (Admin)", () => {
     await findByTestId("mission-selector");
 
     await vi.waitFor(() => {
-      expect(container.textContent).toContain("Sign in");
+      expect(container.textContent).toContain("Sign in with Steam");
     });
   });
 
@@ -741,149 +787,38 @@ describe("MissionSelector (Admin)", () => {
     fireEvent.click(logoutBtn);
 
     await vi.waitFor(() => {
-      expect(container.textContent).toContain("Sign in");
+      expect(container.textContent).toContain("Sign in with Steam");
     });
   });
 
-  // ── Login Modal ──
+  // ── Steam sign-in button ──
 
-  it("opens login modal and submits successfully", async () => {
+  it("Steam sign-in button exists when not authenticated", async () => {
     setAuthToken(null);
-    globalThis.fetch = mockAdminFetch(adminOps);
-    // Override getMe to initially return not authenticated
-    const originalFetch = globalThis.fetch;
-    let loginDone = false;
-    globalThis.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-      if (typeof url === "string" && url.includes("/api/v1/auth/me")) {
-        return Promise.resolve({
-          ok: true, status: 200, statusText: "OK",
-          json: () => Promise.resolve({ authenticated: loginDone }),
-        } as Response);
-      }
-      if (typeof url === "string" && url.includes("/api/v1/auth/login")) {
-        loginDone = true;
-        return originalFetch(url, init);
-      }
-      return originalFetch(url, init);
-    });
-
-    const { findByTestId, container } = renderPage();
-    await findByTestId("mission-selector");
-
-    // Wait for Sign in button
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain("Sign in");
-    });
-
-    // Click Sign in
-    const signInBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.includes("Sign in"),
-    )!;
-    fireEvent.click(signInBtn);
-
-    // Modal should appear
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain("Admin Login");
-    });
-
-    // Type secret and submit
-    const input = container.querySelector("input[type='password']") as HTMLInputElement;
-    fireEvent.input(input, { target: { value: "correct-secret" } });
-
-    const submitBtn = Array.from(container.querySelectorAll("button[type='submit']")).find(
-      (b) => b.textContent?.includes("Sign in"),
-    )!;
-    fireEvent.click(submitBtn);
-
-    // Modal should close and admin badge should appear
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain("ADMIN");
-    });
-  });
-
-  it("shows error on wrong secret", async () => {
-    setAuthToken(null);
-    globalThis.fetch = mockAdminFetch(adminOps);
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
       if (typeof url === "string" && url.includes("/api/v1/auth/me")) {
         return Promise.resolve({
           ok: true, status: 200, statusText: "OK",
           json: () => Promise.resolve({ authenticated: false }),
         } as Response);
       }
-      return originalFetch(url, init);
+      return Promise.resolve({
+        ok: true, status: 200, statusText: "OK",
+        json: () => Promise.resolve([]),
+      } as Response);
     });
 
     const { findByTestId, container } = renderPage();
     await findByTestId("mission-selector");
 
     await vi.waitFor(() => {
-      expect(container.textContent).toContain("Sign in");
+      expect(container.textContent).toContain("Sign in with Steam");
     });
 
-    // Open modal
     const signInBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.includes("Sign in"),
-    )!;
-    fireEvent.click(signInBtn);
-
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain("Admin Login");
-    });
-
-    // Type wrong secret and submit
-    const input = container.querySelector("input[type='password']") as HTMLInputElement;
-    fireEvent.input(input, { target: { value: "wrong-secret" } });
-
-    const submitBtn = container.querySelector("button[type='submit']")!;
-    fireEvent.click(submitBtn);
-
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain("Invalid secret");
-    });
-  });
-
-  it("closes login modal on Cancel", async () => {
-    setAuthToken(null);
-    globalThis.fetch = mockAdminFetch(adminOps);
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-      if (typeof url === "string" && url.includes("/api/v1/auth/me")) {
-        return Promise.resolve({
-          ok: true, status: 200, statusText: "OK",
-          json: () => Promise.resolve({ authenticated: false }),
-        } as Response);
-      }
-      return originalFetch(url, init);
-    });
-
-    const { findByTestId, container } = renderPage();
-    await findByTestId("mission-selector");
-
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain("Sign in");
-    });
-
-    // Open modal
-    const signInBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.includes("Sign in"),
-    )!;
-    fireEvent.click(signInBtn);
-
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain("Admin Login");
-    });
-
-    // Click Cancel
-    const cancelBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent === "Cancel",
-    )!;
-    fireEvent.click(cancelBtn);
-
-    await vi.waitFor(() => {
-      expect(container.textContent).not.toContain("Admin Login");
-    });
+      (b) => b.textContent?.includes("Sign in with Steam"),
+    );
+    expect(signInBtn).toBeDefined();
   });
 
   // ── Edit operation ──
@@ -1300,43 +1235,4 @@ describe("MissionSelector (Admin)", () => {
     });
   });
 
-  // ── Escape closes login modal ──
-
-  it("Escape closes login modal", async () => {
-    setAuthToken(null);
-    globalThis.fetch = mockAdminFetch(adminOps);
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-      if (typeof url === "string" && url.includes("/api/v1/auth/me")) {
-        return Promise.resolve({
-          ok: true, status: 200, statusText: "OK",
-          json: () => Promise.resolve({ authenticated: false }),
-        } as Response);
-      }
-      return originalFetch(url, init);
-    });
-
-    const { findByTestId, container } = renderPage();
-    await findByTestId("mission-selector");
-
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain("Sign in");
-    });
-
-    // Open modal
-    const signInBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.textContent?.includes("Sign in"),
-    )!;
-    fireEvent.click(signInBtn);
-
-    await vi.waitFor(() => {
-      expect(container.textContent).toContain("Admin Login");
-    });
-
-    fireEvent.keyDown(window, { key: "Escape" });
-
-    await vi.waitFor(() => {
-      expect(container.textContent).not.toContain("Admin Login");
-    });
-  });
 });

@@ -19,6 +19,9 @@ export interface BuildInfo {
 
 export interface AuthState {
   authenticated: boolean;
+  steamId?: string;
+  steamName?: string;
+  steamAvatar?: string;
 }
 
 // ─── Error types ───
@@ -286,24 +289,15 @@ export class ApiClient {
 
   // ─── Auth methods ───
 
-  async login(secret: string): Promise<AuthState> {
-    const response = await fetch(`${this.baseUrl}/api/v1/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ secret }),
-    });
-    if (!response.ok) {
-      throw new ApiError(
-        `Login failed: ${response.status} ${response.statusText}`,
-        response.status,
-        response.statusText,
-      );
-    }
-    const data = (await response.json()) as AuthState & { token?: string };
-    if (data.token) {
-      setAuthToken(data.token);
-    }
-    return { authenticated: data.authenticated };
+  getSteamLoginUrl(): string {
+    return `${this.baseUrl}/api/v1/auth/steam`;
+  }
+
+  consumeAuthToken(params: URLSearchParams): boolean {
+    const token = params.get("auth_token");
+    if (!token) return false;
+    setAuthToken(token);
+    return true;
   }
 
   async getMe(): Promise<AuthState> {
