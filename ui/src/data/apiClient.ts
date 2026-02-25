@@ -409,6 +409,50 @@ export class ApiClient {
     }
   }
 
+  // ─── Marker blacklist methods ───
+
+  async getMarkerBlacklist(operationId: string): Promise<number[]> {
+    return this.fetchJson<number[]>(
+      `${this.baseUrl}/api/v1/operations/${encodeURIComponent(operationId)}/marker-blacklist`,
+    );
+  }
+
+  async addMarkerBlacklist(
+    operationId: string,
+    playerEntityId: number,
+  ): Promise<void> {
+    return this.fetchBlacklistUpdate(operationId, playerEntityId, "PUT");
+  }
+
+  async removeMarkerBlacklist(
+    operationId: string,
+    playerEntityId: number,
+  ): Promise<void> {
+    return this.fetchBlacklistUpdate(operationId, playerEntityId, "DELETE");
+  }
+
+  private async fetchBlacklistUpdate(
+    operationId: string,
+    playerEntityId: number,
+    method: "PUT" | "DELETE",
+  ): Promise<void> {
+    const response = await fetch(
+      `${this.baseUrl}/api/v1/operations/${encodeURIComponent(operationId)}/marker-blacklist/${playerEntityId}`,
+      {
+        method,
+        headers: authHeaders(),
+      },
+    );
+    if (!response.ok) {
+      const action = method === "PUT" ? "Add" : "Remove";
+      throw new ApiError(
+        `${action} blacklist failed: ${response.status} ${response.statusText}`,
+        response.status,
+        response.statusText,
+      );
+    }
+  }
+
   // ─── Internal fetch helpers ───
 
   private async fetchJson<T>(url: string): Promise<T> {
