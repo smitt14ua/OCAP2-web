@@ -40,14 +40,21 @@ export function AuthProvider(props: { children: JSX.Element }): JSX.Element {
       setAuthError(AUTH_ERROR_MESSAGES[error] ?? "Authentication failed.");
     }
 
-    api.consumeAuthToken(params);
+    const hadToken = api.consumeAuthToken(params);
 
-    // Clean auth params from URL without reloading
+    // Clean auth params from URL and restore pre-login path
     if (params.has("auth_error") || params.has("auth_token")) {
       params.delete("auth_error");
       params.delete("auth_token");
-      const qs = params.toString();
-      window.history.replaceState({}, "", window.location.pathname + (qs ? "?" + qs : ""));
+      const returnTo = hadToken ? api.popReturnTo() : null;
+      if (returnTo && returnTo !== "/") {
+        // replaceState + popstate triggers the SolidJS router to re-evaluate
+        window.history.replaceState({}, "", returnTo);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      } else {
+        const qs = params.toString();
+        window.history.replaceState({}, "", window.location.pathname + (qs ? "?" + qs : ""));
+      }
     }
 
     if (!getAuthToken()) {
@@ -69,7 +76,9 @@ export function AuthProvider(props: { children: JSX.Element }): JSX.Element {
 
   const loginWithSteam = () => {
     setAuthError(null);
-    window.location.href = api.getSteamLoginUrl();
+    window.location.href = api.getSteamLoginUrl(
+      window.location.pathname + window.location.search,
+    );
   };
 
   const logout = async (): Promise<void> => {
