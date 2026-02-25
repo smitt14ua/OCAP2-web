@@ -37,8 +37,7 @@ export default defineConfig({
         // Barrel exports
         "src/pages/*/index.tsx",
         // Static / declarative files (pure SVG icons, constants)
-        "src/pages/recording-playback/components/Icons.tsx",
-        "src/pages/recording-selector/icons.tsx",
+        "src/components/Icons.tsx",
         "src/pages/recording-selector/OcapLogoSvg.tsx",
         "src/pages/recording-selector/constants.ts",
         // Entry point (side-effectful, tested via App.test.tsx)
