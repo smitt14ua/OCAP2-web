@@ -24,16 +24,24 @@ RUN adduser -D -h /home/container container && \
     mkdir -p /usr/local/ocap/data /var/lib/ocap/db /var/lib/ocap/maps /var/lib/ocap/data
 
 # Full variant: install maptool dependencies (GDAL, tippecanoe, pmtiles)
-ARG TIPPECANOE_VERSION=2.75.0
-ARG PMTILES_VERSION=1.22.3
+ARG TIPPECANOE_VERSION=2.79.0
+ARG PMTILES_VERSION=1.30.0
 RUN if [ "$VARIANT" = "full" ]; then \
-      apk add --no-cache gdal-tools py3-gdal cmake make g++ git sqlite-dev zlib-dev && \
-      git clone --depth 1 --branch ${TIPPECANOE_VERSION} https://github.com/felt/tippecanoe.git /tmp/tippecanoe && \
-      cd /tmp/tippecanoe && make -j$(nproc) && make install && \
-      rm -rf /tmp/tippecanoe && \
-      apk del cmake make g++ git && \
-      wget -qO /usr/local/bin/pmtiles "https://github.com/protomaps/go-pmtiles/releases/download/v${PMTILES_VERSION}/pmtiles_linux_${TARGETARCH}" && \
-      chmod +x /usr/local/bin/pmtiles; \
+      apk add --no-cache gdal-tools py3-gdal build-base bash git sqlite-dev zlib-dev && \
+      wget -qO /tmp/tippecanoe.tar.gz "https://github.com/felt/tippecanoe/archive/refs/tags/${TIPPECANOE_VERSION}.tar.gz" && \
+      tar -xzf /tmp/tippecanoe.tar.gz -C /tmp && \
+      cd /tmp/tippecanoe-${TIPPECANOE_VERSION} && make -j$(nproc) && make install && \
+      rm -rf /tmp/tippecanoe* && \
+      apk del build-base bash git && \
+      case "$TARGETARCH" in \
+        amd64) ARCH="x86_64" ;; \
+        arm64) ARCH="arm64" ;; \
+        *) echo "unsupported arch: $TARGETARCH" && exit 1 ;; \
+      esac && \
+      wget -qO /tmp/pmtiles.tar.gz "https://github.com/protomaps/go-pmtiles/releases/download/v${PMTILES_VERSION}/go-pmtiles_${PMTILES_VERSION}_Linux_${ARCH}.tar.gz" && \
+      tar -xzf /tmp/pmtiles.tar.gz -C /usr/local/bin pmtiles && \
+      chmod +x /usr/local/bin/pmtiles && \
+      rm /tmp/pmtiles.tar.gz; \
     fi
 
 ENV OCAP_AMMO=/usr/local/ocap/ammo \
