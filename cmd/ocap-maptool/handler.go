@@ -1,10 +1,9 @@
 package main
 
 import (
-	"archive/zip"
 	"context"
-	"errors"
 	"embed"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -115,7 +114,7 @@ func (h *handler) importZip(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create extraction dir"})
 	}
 
-	if err := extractZip(tmpPath, extractDir); err != nil {
+	if err := maptool.ExtractZip(tmpPath, extractDir); err != nil {
 		os.RemoveAll(extractDir)
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": fmt.Sprintf("failed to extract zip: %v", err),
@@ -123,7 +122,7 @@ func (h *handler) importZip(c echo.Context) error {
 	}
 
 	// Locate grad_meh directory — could be at root or one level deep
-	gradMehDir, err := findGradMehDir(extractDir)
+	gradMehDir, err := maptool.FindGradMehDir(extractDir)
 	if err != nil {
 		os.RemoveAll(extractDir)
 		return c.JSON(http.StatusBadRequest, map[string]string{
@@ -132,7 +131,7 @@ func (h *handler) importZip(c echo.Context) error {
 	}
 
 	worldName := maptool.WorldNameFromDir(gradMehDir)
-	snap, err := h.jm.Submit(gradMehDir, worldName)
+	snap, err := h.jm.SubmitWithCleanup(gradMehDir, worldName, extractDir)
 	if err != nil {
 		os.RemoveAll(extractDir)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -158,7 +157,7 @@ func (h *handler) restyleAll(c echo.Context) error {
 				return err
 			}
 			job.SetProgress(m.Name, i+1, len(maps))
-			if err := restyleWorld(h.mapsDir, m.Name); err != nil {
+			if err := maptool.RestyleWorld(h.mapsDir, m.Name); err != nil {
 				log.Printf("restyle %s: %v", m.Name, err)
 				errs = append(errs, fmt.Errorf("%s: %w", m.Name, err))
 				continue
@@ -175,76 +174,6 @@ func (h *handler) restyleAll(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusAccepted, snap)
-}
-
-// extractZip extracts a ZIP file to the target directory with zip-slip protection.
-func extractZip(zipPath, targetDir string) error {
-	r, err := zip.OpenReader(zipPath)
-	if err != nil {
-		return err
-	}
-	defer r.Close()
-
-	for _, f := range r.File {
-		destPath := filepath.Join(targetDir, f.Name)
-		// Zip-slip protection
-		if !strings.HasPrefix(filepath.Clean(destPath)+string(os.PathSeparator), filepath.Clean(targetDir)+string(os.PathSeparator)) &&
-			filepath.Clean(destPath) != filepath.Clean(targetDir) {
-			return fmt.Errorf("illegal file path: %s", f.Name)
-		}
-
-		if f.FileInfo().IsDir() {
-			os.MkdirAll(destPath, 0755)
-			continue
-		}
-
-		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-			return err
-		}
-
-		outFile, err := os.Create(destPath)
-		if err != nil {
-			return err
-		}
-
-		rc, err := f.Open()
-		if err != nil {
-			outFile.Close()
-			return err
-		}
-
-		_, err = io.Copy(outFile, rc)
-		rc.Close()
-		outFile.Close()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// findGradMehDir locates the grad_meh export directory within an extracted ZIP.
-// It checks the root first, then one level deep.
-func findGradMehDir(dir string) (string, error) {
-	if maptool.ValidateGradMehDir(dir) == nil {
-		return dir, nil
-	}
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return "", err
-	}
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		subDir := filepath.Join(dir, e.Name())
-		if maptool.ValidateGradMehDir(subDir) == nil {
-			return subDir, nil
-		}
-	}
-
-	return "", fmt.Errorf("no directory with meta.json and sat/ found")
 }
 
 func (h *handler) getJobs(c echo.Context) error {

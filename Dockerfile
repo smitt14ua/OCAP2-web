@@ -17,10 +17,24 @@ ARG build_commit
 RUN go build -ldflags "-X github.com/OCAP2/web/internal/server.BuildVersion=$build_version -X github.com/OCAP2/web/internal/server.BuildDate=`date -u +'%Y-%m-%dT%H:%M:%SZ'` -X github.com/OCAP2/web/internal/server.BuildCommit=$build_commit" -o app ./cmd/ocap-webserver
 
 FROM alpine:3.23
+ARG VARIANT=slim
+ARG TARGETARCH
 WORKDIR /usr/local/ocap
 RUN adduser -D -h /home/container container && \
-    mkdir -p /etc/ocap /usr/local/ocap/data /var/lib/ocap/db /var/lib/ocap/maps /var/lib/ocap/data && \
-    echo '{}' > /etc/ocap/setting.json
+    mkdir -p /usr/local/ocap/data /var/lib/ocap/db /var/lib/ocap/maps /var/lib/ocap/data
+
+# Full variant: install maptool dependencies (GDAL, tippecanoe, pmtiles)
+ARG TIPPECANOE_VERSION=2.75.0
+ARG PMTILES_VERSION=1.22.3
+RUN if [ "$VARIANT" = "full" ]; then \
+      apk add --no-cache gdal-tools py3-gdal cmake make g++ git sqlite-dev zlib-dev && \
+      git clone --depth 1 --branch ${TIPPECANOE_VERSION} https://github.com/felt/tippecanoe.git /tmp/tippecanoe && \
+      cd /tmp/tippecanoe && make -j$(nproc) && make install && \
+      rm -rf /tmp/tippecanoe && \
+      apk del cmake make g++ git && \
+      wget -qO /usr/local/bin/pmtiles "https://github.com/protomaps/go-pmtiles/releases/download/v${PMTILES_VERSION}/pmtiles_linux_${TARGETARCH}" && \
+      chmod +x /usr/local/bin/pmtiles; \
+    fi
 
 ENV OCAP_AMMO=/usr/local/ocap/ammo \
     OCAP_DATA=/var/lib/ocap/data \

@@ -98,6 +98,7 @@ func NewSetting() (setting Setting, err error) {
 	viper.SetDefault("admin.allowedSteamIds", []string{})
 	viper.SetDefault("admin.steamApiKey", "")
 
+
 	// workaround for https://github.com/spf13/viper/issues/761
 	envKeys := []string{"listen", "prefixURL", "secret", "db", "markers", "ammo", "fonts", "maps", "data", "static", "customize.enabled", "customize.websiteurl", "customize.websitelogo", "customize.websitelogosize", "customize.disableKillCount", "customize.headertitle", "customize.headersubtitle", "conversion.enabled", "conversion.interval", "conversion.batchSize", "conversion.chunkSize", "conversion.retryFailed", "streaming.enabled", "streaming.pingInterval", "streaming.pingTimeout", "admin.sessionTTL", "admin.allowedSteamIds", "admin.steamApiKey"}
 	for _, key := range envKeys {
