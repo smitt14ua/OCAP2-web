@@ -15,9 +15,10 @@ export function EditModal(props: {
   onClose: () => void;
   onSave: (id: string, data: { missionName?: string; tag?: string; date?: string }) => void;
 }): JSX.Element {
-  const [name, setName] = createSignal(props.rec.missionName);
-  const [tag, setTag] = createSignal(props.rec.tag ?? "");
-  const [date, setDate] = createSignal(props.rec.date?.slice(0, 10) ?? "");
+  const rec = () => props.rec;
+  const [name, setName] = createSignal(rec().missionName);
+  const [tag, setTag] = createSignal(rec().tag ?? "");
+  const [date, setDate] = createSignal(rec().date?.slice(0, 10) ?? "");
 
   const handleSubmit = (e: Event) => {
     e.preventDefault();
@@ -37,7 +38,7 @@ export function EditModal(props: {
             <span style={{ color: "var(--accent-primary)" }}><EditIcon /></span>
             <span class={ui.dialogTitle}>Edit Recording</span>
           </div>
-          <button class={ui.dialogCloseBtn} onClick={props.onClose}><XIcon /></button>
+          <button class={ui.dialogCloseBtn} onClick={() => props.onClose()}><XIcon /></button>
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -115,7 +116,7 @@ export function EditModal(props: {
           </div>
 
           <div class={ui.dialogFooter}>
-            <button type="button" class={ui.btnGhost} onClick={props.onClose}>Cancel</button>
+            <button type="button" class={ui.btnGhost} onClick={() => props.onClose()}>Cancel</button>
             <button type="submit" class={ui.btnPrimary}><CheckIcon /> Save Changes</button>
           </div>
         </form>
@@ -172,7 +173,7 @@ export function UploadDialog(props: {
             <span class={styles.uploadHeaderIcon}><UploadIcon /></span>
             <span class={ui.dialogTitle}>Upload Recording</span>
           </div>
-          <button class={ui.dialogCloseBtn} data-testid="upload-dialog-close" onClick={props.onCancel}><XIcon /></button>
+          <button class={ui.dialogCloseBtn} data-testid="upload-dialog-close" onClick={() => props.onCancel()}><XIcon /></button>
         </div>
 
         <div class={ui.dialogBody} style={{ gap: "14px" }}>
@@ -287,7 +288,7 @@ export function UploadDialog(props: {
             {!file() ? "Select a file to upload" : !name() ? "Enter a mission name" : "Ready to upload"}
           </div>
           <div class={styles.uploadFooterButtons}>
-            <button type="button" class={ui.btnGhost} onClick={props.onCancel}>Cancel</button>
+            <button type="button" class={ui.btnGhost} onClick={() => props.onCancel()}>Cancel</button>
             <button
               class={styles.uploadSubmitBtn}
               data-testid="upload-submit"
@@ -331,7 +332,7 @@ export function DeleteConfirm(props: {
 
         {/* Footer */}
         <div class={ui.dialogFooter}>
-          <button type="button" class={ui.btnGhost} onClick={props.onClose}>Cancel</button>
+          <button type="button" class={ui.btnGhost} onClick={() => props.onClose()}>Cancel</button>
           <button type="button" class={ui.btnDanger} onClick={() => props.onConfirm(props.rec.id)}>
             <span style={{ display: "flex", "align-items": "center", gap: "5px" }}>
               <TrashIcon /> Delete Recording
