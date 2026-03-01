@@ -108,7 +108,11 @@ export class PlaybackEngine {
   private _setCaptureDelayMs: (v: number) => void;
 
   // ─── Playback loop state ───
-  private playbackTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Max delta (ms) before treating a gap as a background-tab resume. */
+  private static readonly MAX_FRAME_DELTA_MS = 100;
+  private animFrameId: number | null = null;
+  private lastTickTime = 0;
+  private accumulatedMs = 0;
 
   constructor(renderer: MapRenderer) {
     this.renderer = renderer;
@@ -203,7 +207,7 @@ export class PlaybackEngine {
     // Don't play past the end
     if (this._currentFrame() >= this._endFrame()) return;
     this._setIsPlaying(true);
-    this.scheduleNextTick();
+    this.startLoop();
   }
 
   pause(): void {
@@ -245,7 +249,7 @@ export class PlaybackEngine {
     // Restart timer with new interval if playing
     if (this._isPlaying()) {
       this.clearTimer();
-      this.scheduleNextTick();
+      this.startLoop();
     }
   }
 
@@ -341,20 +345,41 @@ export class PlaybackEngine {
 
   // ─── Playback loop ───
 
-  private scheduleNextTick(): void {
-    const interval = this._captureDelayMs() / this._playbackSpeed();
-    this.playbackTimer = setTimeout(() => this.tick(), interval);
+  private startLoop(): void {
+    this.accumulatedMs = 0;
+    this.lastTickTime = performance.now();
+    this.animFrameId = requestAnimationFrame(() => this.onFrame());
   }
 
   private clearTimer(): void {
-    if (this.playbackTimer !== null) {
-      clearTimeout(this.playbackTimer);
-      this.playbackTimer = null;
+    if (this.animFrameId !== null) {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = null;
     }
   }
 
-  private tick(): void {
+  private onFrame(): void {
     if (!this._isPlaying()) return;
+
+    const now = performance.now();
+    let delta = now - this.lastTickTime;
+    this.lastTickTime = now;
+
+    // Background tab: rAF pauses, delta is huge on resume. Discard it.
+    if (delta > PlaybackEngine.MAX_FRAME_DELTA_MS) {
+      delta = 0;
+    }
+
+    this.accumulatedMs += delta;
+    const idealInterval = this._captureDelayMs() / this._playbackSpeed();
+    const framesToAdvance = Math.floor(this.accumulatedMs / idealInterval);
+
+    if (framesToAdvance <= 0) {
+      this.animFrameId = requestAnimationFrame(() => this.onFrame());
+      return;
+    }
+
+    this.accumulatedMs -= framesToAdvance * idealInterval;
 
     const frame = this._currentFrame();
     const end = this._endFrame();
@@ -365,7 +390,7 @@ export class PlaybackEngine {
       return;
     }
 
-    const nextFrame = frame + 1;
+    const nextFrame = Math.min(frame + framesToAdvance, end);
     this._setCurrentFrame(nextFrame);
 
     // Ensure current chunk is loaded (async — the onChunkLoaded callback
@@ -399,8 +424,8 @@ export class PlaybackEngine {
       return;
     }
 
-    // Schedule next tick
-    this.scheduleNextTick();
+    // Schedule next frame
+    this.animFrameId = requestAnimationFrame(() => this.onFrame());
   }
 
   // ─── Snapshot computation ───
