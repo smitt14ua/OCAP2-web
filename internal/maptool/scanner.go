@@ -49,7 +49,7 @@ func ScanMaps(mapsDir string) ([]MapInfo, error) {
 	entries, err := os.ReadDir(mapsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return []MapInfo{}, nil
 		}
 		return nil, fmt.Errorf("read maps dir: %w", err)
 	}
@@ -72,7 +72,7 @@ func ScanMaps(mapsDir string) ([]MapInfo, error) {
 		{"color-relief.pmtiles", "tiles"},
 	}
 
-	var maps []MapInfo
+	maps := []MapInfo{}
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
