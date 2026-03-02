@@ -38,8 +38,17 @@ func setupMaptoolTest(t *testing.T) (*Handler, string) {
 
 	jm := maptool.NewJobManager(mapsDir, noopPipeline)
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go jm.Start(ctx)
+	done := make(chan struct{})
+	go func() {
+		jm.Start(ctx)
+		close(done)
+	}()
+	// Cancel then wait for Start to return so all in-flight processJob
+	// calls finish before t.TempDir() cleanup removes the directory.
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
 
 	tools := maptool.ToolSet{
 		{Name: "pmtiles", Required: true, Found: true, Path: "/usr/bin/pmtiles"},
@@ -72,6 +81,49 @@ func TestGetMapToolTools(t *testing.T) {
 	assert.True(t, tools[0].Found)
 	assert.Equal(t, "tippecanoe", tools[1].Name)
 	assert.False(t, tools[1].Found)
+}
+
+func TestGetMapToolHealth_Writable(t *testing.T) {
+	hdlr, _ := setupMaptoolTest(t)
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := hdlr.getMapToolHealth(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var checks []map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &checks))
+	require.Len(t, checks, 1)
+	assert.Equal(t, "maps_writable", checks[0]["id"])
+	assert.Equal(t, true, checks[0]["ok"])
+	assert.Nil(t, checks[0]["error"])
+}
+
+func TestGetMapToolHealth_NotWritable(t *testing.T) {
+	hdlr, mapsDir := setupMaptoolTest(t)
+	// Point mapsDir to a non-existent path inside a file (not a dir)
+	blocker := filepath.Join(mapsDir, "blocker-file")
+	require.NoError(t, os.WriteFile(blocker, []byte("x"), 0644))
+	hdlr.maptoolCfg.mapsDir = blocker
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := hdlr.getMapToolHealth(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var checks []map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &checks))
+	require.Len(t, checks, 1)
+	assert.Equal(t, false, checks[0]["ok"])
+	assert.NotNil(t, checks[0]["error"])
 }
 
 func TestGetMapToolMaps_Empty(t *testing.T) {
@@ -502,8 +554,9 @@ func TestRestyleMapToolAll_ExecutesCallback(t *testing.T) {
 
 	jm := maptool.NewJobManager(mapsDir, noopPipeline)
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go jm.Start(ctx)
+	done := make(chan struct{})
+	go func() { jm.Start(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
 
 	hdlr := &Handler{
 		maptoolMgr: jm,
@@ -636,8 +689,9 @@ func TestRestyleMapToolAll_RestyleWorldError(t *testing.T) {
 
 	jm := maptool.NewJobManager(mapsDir, noopPipeline)
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go jm.Start(ctx)
+	done := make(chan struct{})
+	go func() { jm.Start(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
 
 	hdlr := &Handler{
 		maptoolMgr: jm,
@@ -700,8 +754,9 @@ func TestMapToolEventStream_QueryToken(t *testing.T) {
 	mapsDir := t.TempDir()
 	jm := maptool.NewJobManager(mapsDir, noopPipeline)
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go jm.Start(ctx)
+	done := make(chan struct{})
+	go func() { jm.Start(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
 
 	jwt := NewJWTManager("test-secret", time.Hour)
 	token, err := jwt.Create("")
@@ -775,8 +830,9 @@ func TestMapToolEventStream_BearerToken(t *testing.T) {
 	mapsDir := t.TempDir()
 	jm := maptool.NewJobManager(mapsDir, noopPipeline)
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go jm.Start(ctx)
+	done := make(chan struct{})
+	go func() { jm.Start(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
 
 	jwt := NewJWTManager("test-secret", time.Hour)
 	token, err := jwt.Create("")
@@ -851,7 +907,9 @@ func TestRestyleMapToolAll_SubmitError(t *testing.T) {
 
 	// Start the job manager briefly so Submit works, then stop to test the error
 	ctx, cancel := context.WithCancel(context.Background())
-	go jm.Start(ctx)
+	done := make(chan struct{})
+	go func() { jm.Start(ctx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
 	// Give it a moment to start
 	time.Sleep(20 * time.Millisecond)
 
@@ -864,7 +922,6 @@ func TestRestyleMapToolAll_SubmitError(t *testing.T) {
 	err := hdlr.restyleMapToolAll(c)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusAccepted, rec.Code)
-	cancel()
 }
 
 // jsonTrimmed returns the recorder body with trailing whitespace removed.

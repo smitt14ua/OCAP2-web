@@ -3,6 +3,7 @@ package maptool
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -28,6 +29,7 @@ type MapInfo struct {
 	Name          string             `json:"name"`
 	WorldSize     int                `json:"worldSize,omitempty"`
 	Status        MapStatus          `json:"status"`
+	LastError     string             `json:"lastError,omitempty"`
 	HasPreview    bool               `json:"hasPreview,omitempty"`
 	Elevation     *MapElevation      `json:"elevation,omitempty"`
 	FeatureLayers []string           `json:"featureLayers,omitempty"`
@@ -133,6 +135,21 @@ func ScanMaps(mapsDir string) ([]MapInfo, error) {
 			info.Status = MapStatusComplete
 		default:
 			info.Status = MapStatusIncomplete
+		}
+
+		// Read persisted error info for failed/incomplete maps.
+		if info.Status == MapStatusNone || info.Status == MapStatusIncomplete {
+			errorJSONPath := filepath.Join(worldDir, "error.json")
+			if data, err := os.ReadFile(errorJSONPath); err == nil {
+				var errInfo struct {
+					Error string `json:"error"`
+				}
+				if err := json.Unmarshal(data, &errInfo); err != nil {
+					log.Printf("WARNING: failed to parse error.json for %s: %v", entry.Name(), err)
+				} else if errInfo.Error != "" {
+					info.LastError = errInfo.Error
+				}
+			}
 		}
 
 		if len(info.Files) == 0 {

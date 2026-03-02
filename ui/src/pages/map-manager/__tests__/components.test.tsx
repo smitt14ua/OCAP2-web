@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, cleanup, fireEvent } from "@solidjs/testing-library";
 import { StatusStrip } from "../components";
-import type { ToolInfo, JobInfo } from "../types";
+import type { ToolInfo, HealthCheck, JobInfo } from "../types";
 
 const makeTools = (overrides: Partial<ToolInfo>[] = []): ToolInfo[] => {
   const defaults: ToolInfo[] = [
@@ -38,7 +38,7 @@ describe("StatusStrip", () => {
   it("renders tool count", () => {
     const tools = makeTools();
     const { container } = render(() => (
-      <StatusStrip tools={tools} jobs={[]} onCancel={() => {}} />
+      <StatusStrip tools={tools} jobs={[]} health={[]} onCancel={() => {}} />
     ));
     // 3 found out of 4
     expect(container.textContent).toContain("3/4 tools");
@@ -46,7 +46,7 @@ describe("StatusStrip", () => {
 
   it("shows 'No active imports' when no running jobs", () => {
     const { container } = render(() => (
-      <StatusStrip tools={makeTools()} jobs={[]} onCancel={() => {}} />
+      <StatusStrip tools={makeTools()} jobs={[]} health={[]} onCancel={() => {}} />
     ));
     expect(container.textContent).toContain("No active imports");
   });
@@ -54,7 +54,7 @@ describe("StatusStrip", () => {
   it("shows active job world name when running", () => {
     const job = makeJob({ status: "running" });
     const { container } = render(() => (
-      <StatusStrip tools={makeTools()} jobs={[job]} onCancel={() => {}} />
+      <StatusStrip tools={makeTools()} jobs={[job]} health={[]} onCancel={() => {}} />
     ));
     expect(container.textContent).toContain("Altis");
   });
@@ -65,7 +65,7 @@ describe("StatusStrip", () => {
       makeJob({ id: "j2", status: "failed" }),
     ];
     const { container } = render(() => (
-      <StatusStrip tools={makeTools()} jobs={jobs} onCancel={() => {}} />
+      <StatusStrip tools={makeTools()} jobs={jobs} health={[]} onCancel={() => {}} />
     ));
     expect(container.textContent).toContain("2 past");
   });
@@ -76,7 +76,7 @@ describe("StatusStrip", () => {
       makeJob({ id: "j2", status: "pending" }),
     ];
     const { container } = render(() => (
-      <StatusStrip tools={makeTools()} jobs={jobs} onCancel={() => {}} />
+      <StatusStrip tools={makeTools()} jobs={jobs} health={[]} onCancel={() => {}} />
     ));
     expect(container.textContent).toContain("2");
   });
@@ -85,14 +85,14 @@ describe("StatusStrip", () => {
     const tools = makeTools();
     // gdaldem is missing + optional
     const { container } = render(() => (
-      <StatusStrip tools={tools} jobs={[]} onCancel={() => {}} />
+      <StatusStrip tools={tools} jobs={[]} health={[]} onCancel={() => {}} />
     ));
     expect(container.textContent).toContain("1 optional missing");
   });
 
   it("opens tools dropdown on click", () => {
     const { container } = render(() => (
-      <StatusStrip tools={makeTools()} jobs={[]} onCancel={() => {}} />
+      <StatusStrip tools={makeTools()} jobs={[]} health={[]} onCancel={() => {}} />
     ));
     // Click the tools button (first button)
     const toolsBtn = container.querySelectorAll("button")[0];
@@ -105,7 +105,7 @@ describe("StatusStrip", () => {
   it("opens jobs dropdown on click", () => {
     const jobs: JobInfo[] = [makeJob({ id: "j1", status: "done", worldName: "Tanoa" })];
     const { container } = render(() => (
-      <StatusStrip tools={makeTools()} jobs={jobs} onCancel={() => {}} />
+      <StatusStrip tools={makeTools()} jobs={jobs} health={[]} onCancel={() => {}} />
     ));
     // Jobs button is the last button in the strip (not the cancel button)
     const buttons = container.querySelectorAll("button");
@@ -118,7 +118,7 @@ describe("StatusStrip", () => {
 
   it("shows 'No job history' in empty jobs dropdown", () => {
     const { container } = render(() => (
-      <StatusStrip tools={makeTools()} jobs={[]} onCancel={() => {}} />
+      <StatusStrip tools={makeTools()} jobs={[]} health={[]} onCancel={() => {}} />
     ));
     const buttons = container.querySelectorAll("button");
     const jobsBtn = buttons[buttons.length - 1];
@@ -137,7 +137,7 @@ describe("StatusStrip", () => {
       }),
     ];
     const { container } = render(() => (
-      <StatusStrip tools={makeTools()} jobs={jobs} onCancel={() => {}} />
+      <StatusStrip tools={makeTools()} jobs={jobs} health={[]} onCancel={() => {}} />
     ));
     const buttons = container.querySelectorAll("button");
     fireEvent.click(buttons[buttons.length - 1]);
@@ -147,7 +147,7 @@ describe("StatusStrip", () => {
 
   it("shows tool paths in tools dropdown for found tools", () => {
     const { container } = render(() => (
-      <StatusStrip tools={makeTools()} jobs={[]} onCancel={() => {}} />
+      <StatusStrip tools={makeTools()} jobs={[]} health={[]} onCancel={() => {}} />
     ));
     const toolsBtn = container.querySelectorAll("button")[0];
     fireEvent.click(toolsBtn);
@@ -160,7 +160,7 @@ describe("StatusStrip", () => {
       { name: "gdal_translate", found: false, path: "", required: false },
     ];
     const { container } = render(() => (
-      <StatusStrip tools={tools} jobs={[]} onCancel={() => {}} />
+      <StatusStrip tools={tools} jobs={[]} health={[]} onCancel={() => {}} />
     ));
     const toolsBtn = container.querySelectorAll("button")[0];
     fireEvent.click(toolsBtn);
@@ -174,7 +174,7 @@ describe("StatusStrip", () => {
       makeJob({ id: "p2", status: "pending", worldName: "Tanoa" }),
     ];
     const { container } = render(() => (
-      <StatusStrip tools={makeTools()} jobs={jobs} onCancel={() => {}} />
+      <StatusStrip tools={makeTools()} jobs={jobs} health={[]} onCancel={() => {}} />
     ));
     const buttons = container.querySelectorAll("button");
     fireEvent.click(buttons[buttons.length - 1]);
@@ -194,7 +194,7 @@ describe("StatusStrip", () => {
       }),
     ];
     const { container } = render(() => (
-      <StatusStrip tools={makeTools()} jobs={jobs} onCancel={() => {}} />
+      <StatusStrip tools={makeTools()} jobs={jobs} health={[]} onCancel={() => {}} />
     ));
     const buttons = container.querySelectorAll("button");
     fireEvent.click(buttons[buttons.length - 1]);
@@ -206,7 +206,7 @@ describe("StatusStrip", () => {
     const onCancel = vi.fn();
     const jobs: JobInfo[] = [makeJob({ id: "active-1", status: "running" })];
     const { container } = render(() => (
-      <StatusStrip tools={makeTools()} jobs={jobs} onCancel={onCancel} />
+      <StatusStrip tools={makeTools()} jobs={jobs} health={[]} onCancel={onCancel} />
     ));
     // Cancel button should be visible for running job
     const cancelBtn = container.querySelector("[title='Cancel import']") as HTMLElement;
@@ -222,7 +222,7 @@ describe("StatusStrip", () => {
       makeJob({ id: "h2", status: "failed", worldName: "Stratis", error: "boom" }),
     ];
     const { container } = render(() => (
-      <StatusStrip tools={makeTools()} jobs={jobs} onCancel={() => {}} />
+      <StatusStrip tools={makeTools()} jobs={jobs} health={[]} onCancel={() => {}} />
     ));
     const buttons = container.querySelectorAll("button");
     fireEvent.click(buttons[buttons.length - 1]);
@@ -237,7 +237,7 @@ describe("StatusStrip", () => {
     const { container } = render(() => (
       <div>
         <div data-testid="outside">outside</div>
-        <StatusStrip tools={makeTools()} jobs={[]} onCancel={() => {}} />
+        <StatusStrip tools={makeTools()} jobs={[]} health={[]} onCancel={() => {}} />
       </div>
     ));
     // Open tools dropdown
@@ -249,5 +249,67 @@ describe("StatusStrip", () => {
     const outside = container.querySelector("[data-testid='outside']")!;
     fireEvent.mouseDown(outside);
     expect(container.textContent).not.toContain("CLI TOOLS");
+  });
+
+  it("shows 'Environment issue' when health check fails", () => {
+    const health: HealthCheck[] = [
+      { id: "maps_writable", label: "Maps directory writable", ok: false, error: "permission denied" },
+    ];
+    const { container } = render(() => (
+      <StatusStrip tools={makeTools()} jobs={[]} health={health} onCancel={() => {}} />
+    ));
+    expect(container.textContent).toContain("Environment issue");
+  });
+
+  it("shows ENVIRONMENT section in tools dropdown with health errors", () => {
+    const health: HealthCheck[] = [
+      { id: "maps_writable", label: "Maps directory writable", ok: false, error: "maps dir not writable" },
+    ];
+    const { container } = render(() => (
+      <StatusStrip tools={makeTools()} jobs={[]} health={health} onCancel={() => {}} />
+    ));
+    const toolsBtn = container.querySelectorAll("button")[0];
+    fireEvent.click(toolsBtn);
+    expect(container.textContent).toContain("ENVIRONMENT");
+    expect(container.textContent).toContain("Maps directory writable");
+    expect(container.textContent).toContain("maps dir not writable");
+  });
+
+  it("shows passing health check in tools dropdown", () => {
+    const health: HealthCheck[] = [
+      { id: "maps_writable", label: "Maps directory writable", ok: true },
+    ];
+    const { container } = render(() => (
+      <StatusStrip tools={makeTools()} jobs={[]} health={health} onCancel={() => {}} />
+    ));
+    const toolsBtn = container.querySelectorAll("button")[0];
+    fireEvent.click(toolsBtn);
+    expect(container.textContent).toContain("ENVIRONMENT");
+    expect(container.textContent).toContain("Maps directory writable");
+    expect(container.textContent).not.toContain("Environment issue");
+  });
+
+  it("shows failed badge when there are failed jobs", () => {
+    const jobs: JobInfo[] = [
+      makeJob({ id: "j1", status: "failed", error: "boom" }),
+    ];
+    const { container } = render(() => (
+      <StatusStrip tools={makeTools()} jobs={jobs} health={[]} onCancel={() => {}} />
+    ));
+    // Should show failed count badge and "1 past" with failed styling
+    expect(container.textContent).toContain("1");
+    expect(container.textContent).toContain("1 past");
+  });
+
+  it("hides 'optional missing' label when health is failing", () => {
+    const health: HealthCheck[] = [
+      { id: "maps_writable", label: "Maps directory writable", ok: false, error: "permission denied" },
+    ];
+    const { container } = render(() => (
+      <StatusStrip tools={makeTools()} jobs={[]} health={health} onCancel={() => {}} />
+    ));
+    // "optional missing" should not appear when health is failing
+    expect(container.textContent).not.toContain("optional missing");
+    expect(container.textContent).toContain("Environment issue");
   });
 });
