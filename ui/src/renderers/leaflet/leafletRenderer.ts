@@ -10,13 +10,12 @@ import type {
   MarkerHandle,
   EntityMarkerOpts,
   EntityMarkerState,
+  CrewInfo,
   BriefingMarkerHandle,
   BriefingMarkerDef,
   BriefingMarkerState,
   LineHandle,
   LineOpts,
-  PulseHandle,
-  PulseOpts,
   RenderLayer,
   RendererEvent,
   RendererControls,
@@ -34,6 +33,8 @@ import {
   removePattern,
   patchSVGUpdateStyle,
 } from "./svgPatterns";
+
+import { formatPopupContent } from "./popupFormat";
 
 // --------------- Internal handle wrapper ---------------
 
@@ -75,10 +76,6 @@ interface InternalLineHandle {
   line: L.Polyline;
 }
 
-interface InternalPulseHandle {
-  marker: L.Marker;
-}
-
 function wrapMarker(data: InternalMarkerHandle): MarkerHandle {
   return { _brand: undefined as any, _internal: data } as unknown as MarkerHandle;
 }
@@ -101,14 +98,6 @@ function wrapLine(data: InternalLineHandle): LineHandle {
 
 function unwrapLine(handle: LineHandle): InternalLineHandle {
   return (handle as any)._internal as InternalLineHandle;
-}
-
-function wrapPulse(data: InternalPulseHandle): PulseHandle {
-  return { _brand: undefined as any, _internal: data } as unknown as PulseHandle;
-}
-
-function unwrapPulse(handle: PulseHandle): InternalPulseHandle {
-  return (handle as any)._internal as InternalPulseHandle;
 }
 
 // --------------- Layer group keys ---------------
@@ -135,9 +124,9 @@ export function latLngToArmaMapLibre(latlng: L.LatLng): ArmaCoord {
 // --------------- Renderer ---------------
 
 export class LeafletRenderer implements MapRenderer {
-  private map!: L.Map;
+  protected map!: L.Map;
   private world!: WorldConfig;
-  private useMapLibreMode = false;
+  protected useMapLibreMode = false;
 
   // Signal-backed display mode state
   private readonly _nameDisplayMode: Accessor<"players" | "all" | "none">;
@@ -164,13 +153,10 @@ export class LeafletRenderer implements MapRenderer {
   // SVG renderer for briefing marker shapes (avoids canvas zoom-animation scaling)
   private svgRenderer!: L.SVG;
   private svgDefs!: SVGDefsElement;
-
-
-  // MapLibre layer reference (for style switching)
   private maplibreLayer: any = null;
 
   // Grid and MapLibre toggle layers for overlay control
-  private gridLayer: L.LayerGroup | null = null;
+  protected gridLayer: L.LayerGroup | null = null;
   private mapIconsLayer: L.LayerGroup | null = null;
   private buildings3DLayer: L.LayerGroup | null = null;
 
@@ -714,9 +700,9 @@ export class LeafletRenderer implements MapRenderer {
     this.map.remove();
   }
 
-  // ==================== Coordinate conversion (private) ====================
+  // ==================== Coordinate conversion ====================
 
-  private armaToLatLng(coords: ArmaCoord): L.LatLng {
+  protected armaToLatLng(coords: ArmaCoord): L.LatLng {
     if (this.useMapLibreMode) {
       return armaToLatLngMapLibre(coords);
     }
@@ -728,7 +714,7 @@ export class LeafletRenderer implements MapRenderer {
     return this.map.unproject(pixelCoords, this.maxNativeZoom);
   }
 
-  private latLngToArma(latlng: L.LatLng): ArmaCoord {
+  protected latLngToArma(latlng: L.LatLng): ArmaCoord {
     if (this.useMapLibreMode) {
       return latLngToArmaMapLibre(latlng);
     }
@@ -786,11 +772,12 @@ export class LeafletRenderer implements MapRenderer {
       closeButton: false,
       className: opts.iconType === "man" ? "leaflet-popup-unit" : "leaflet-popup-vehicle",
     });
-    popup.setContent(opts.name);
+    const popupContent = formatPopupContent(opts.name, opts.crew);
+    popup.setContent(popupContent);
     marker.bindPopup(popup).openPopup();
 
     const iconKey = `${opts.iconType}:${opts.side}:1`;
-    const internal: InternalMarkerHandle = { marker, id, lastDirection: 0, iconKey, popupName: opts.name, isPlayer: opts.isPlayer, isInVehicle: false };
+    const internal: InternalMarkerHandle = { marker, id, lastDirection: 0, iconKey, popupName: popupContent, isPlayer: opts.isPlayer, isInVehicle: false };
     (marker as any)._ocapInternal = internal;
     return wrapMarker(internal);
   }
@@ -829,9 +816,10 @@ export class LeafletRenderer implements MapRenderer {
     // Update popup text and visibility via CSS display (matching old hideMarkerPopup).
     const popup = marker.getPopup();
     if (popup) {
-      if (state.name !== internal.popupName) {
-        popup.setContent(state.name);
-        internal.popupName = state.name;
+      const popupContent = formatPopupContent(state.name, state.crew);
+      if (popupContent !== internal.popupName) {
+        popup.setContent(popupContent);
+        internal.popupName = popupContent;
       }
 
       const popupEl = popup.getElement();
@@ -1132,25 +1120,6 @@ export class LeafletRenderer implements MapRenderer {
     this.layers.projectileMarkers.removeLayer(internal.line);
   }
 
-  // ==================== Pulses ====================
-
-  addPulse(pos: ArmaCoord, opts: PulseOpts): PulseHandle {
-    const latlng = this.armaToLatLng(pos);
-    const marker = L.marker(latlng, {
-      icon: L.divIcon({
-        className: "pulse-icon",
-        html: `<div class="pulse-ring" style="border-color:${opts.color};background:${opts.fillColor}"></div>`,
-        iconSize: opts.iconSize,
-      }),
-    });
-    marker.addTo(this.layers.entities);
-    return wrapPulse({ marker });
-  }
-
-  removePulse(handle: PulseHandle): void {
-    const internal = unwrapPulse(handle);
-    this.layers.entities.removeLayer(internal.marker);
-  }
 
   // ==================== Layer visibility ====================
 

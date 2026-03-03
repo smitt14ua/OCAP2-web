@@ -324,7 +324,7 @@ describe("useRenderBridge", () => {
     dispose();
   });
 
-  it("vehicle marker shows crew count and member names", async () => {
+  it("vehicle marker passes crew info with count and player names", async () => {
     const { engine, renderer, markerManager } = createTestSetup();
     const updateSpy = vi.spyOn(renderer, "updateEntityMarker");
 
@@ -349,21 +349,18 @@ describe("useRenderBridge", () => {
 
     await flush();
 
-    // Find the updateEntityMarker call for the vehicle (id=50)
     const vehicleCall = updateSpy.mock.calls.find(
-      (call) => (call[1] as any).name?.includes("HMMWV"),
+      (call) => (call[1] as any).name === "HMMWV",
     );
     expect(vehicleCall).toBeDefined();
-    const name = (vehicleCall![1] as any).name as string;
-    expect(name).toContain("<u>HMMWV</u>");
-    expect(name).toContain("<i>(2)</i>");
-    expect(name).toContain("Driver");
-    expect(name).toContain("Gunner");
+    const state = vehicleCall![1] as any;
+    expect(state.name).toBe("HMMWV");
+    expect(state.crew).toEqual({ count: 2, names: ["Driver", "Gunner"] });
 
     dispose();
   });
 
-  it("vehicle with no crew shows name with (0)", async () => {
+  it("vehicle with no crew passes crew info with zero count", async () => {
     const { engine, renderer, markerManager } = createTestSetup();
     const updateSpy = vi.spyOn(renderer, "updateEntityMarker");
 
@@ -387,16 +384,17 @@ describe("useRenderBridge", () => {
     await flush();
 
     const vehicleCall = updateSpy.mock.calls.find(
-      (call) => (call[1] as any).name?.includes("HMMWV"),
+      (call) => (call[1] as any).name === "HMMWV",
     );
     expect(vehicleCall).toBeDefined();
-    const name = (vehicleCall![1] as any).name as string;
-    expect(name).toBe("HMMWV <i>(0)</i>");
+    const state = vehicleCall![1] as any;
+    expect(state.name).toBe("HMMWV");
+    expect(state.crew).toEqual({ count: 0, names: [] });
 
     dispose();
   });
 
-  it("vehicle crew display updates when crew changes", async () => {
+  it("vehicle crew info updates when crew changes", async () => {
     const { engine, renderer, markerManager } = createTestSetup();
     const updateSpy = vi.spyOn(renderer, "updateEntityMarker");
 
@@ -430,29 +428,25 @@ describe("useRenderBridge", () => {
 
     // Frame 0: only Driver in crew
     let vehicleCalls = updateSpy.mock.calls.filter(
-      (call) => (call[1] as any).name?.includes("HMMWV"),
+      (call) => (call[1] as any).name === "HMMWV",
     );
-    let lastName = (vehicleCalls[vehicleCalls.length - 1]![1] as any).name as string;
-    expect(lastName).toContain("<i>(1)</i>");
-    expect(lastName).toContain("Driver");
-    expect(lastName).not.toContain("Gunner");
+    let lastState = vehicleCalls[vehicleCalls.length - 1]![1] as any;
+    expect(lastState.crew).toEqual({ count: 1, names: ["Driver"] });
 
     // Seek to frame 1: both Driver and Gunner in crew
     engine.seekTo(1);
     await flush();
 
     vehicleCalls = updateSpy.mock.calls.filter(
-      (call) => (call[1] as any).name?.includes("HMMWV"),
+      (call) => (call[1] as any).name === "HMMWV",
     );
-    lastName = (vehicleCalls[vehicleCalls.length - 1]![1] as any).name as string;
-    expect(lastName).toContain("<i>(2)</i>");
-    expect(lastName).toContain("Driver");
-    expect(lastName).toContain("Gunner");
+    lastState = vehicleCalls[vehicleCalls.length - 1]![1] as any;
+    expect(lastState.crew).toEqual({ count: 2, names: ["Driver", "Gunner"] });
 
     dispose();
   });
 
-  it("vehicle crew listing excludes AI (non-player) crew members", async () => {
+  it("vehicle crew info excludes AI (non-player) crew members from names", async () => {
     const { engine, renderer, markerManager } = createTestSetup();
     const updateSpy = vi.spyOn(renderer, "updateEntityMarker");
 
@@ -479,20 +473,17 @@ describe("useRenderBridge", () => {
     await flush();
 
     const vehicleCall = updateSpy.mock.calls.find(
-      (call) => (call[1] as any).name?.includes("HMMWV"),
+      (call) => (call[1] as any).name === "HMMWV",
     );
     expect(vehicleCall).toBeDefined();
-    const name = (vehicleCall![1] as any).name as string;
+    const state = vehicleCall![1] as any;
     // Total crew count includes all (3), but only players are listed by name
-    expect(name).toContain("<i>(3)</i>");
-    expect(name).toContain("PlayerDriver");
-    expect(name).not.toContain("AIGunner");
-    expect(name).toContain("PlayerCargo");
+    expect(state.crew).toEqual({ count: 3, names: ["PlayerDriver", "PlayerCargo"] });
 
     dispose();
   });
 
-  it("vehicle with only AI crew shows header without names", async () => {
+  it("vehicle with only AI crew has empty names list", async () => {
     const { engine, renderer, markerManager } = createTestSetup();
     const updateSpy = vi.spyOn(renderer, "updateEntityMarker");
 
@@ -518,14 +509,11 @@ describe("useRenderBridge", () => {
     await flush();
 
     const vehicleCall = updateSpy.mock.calls.find(
-      (call) => (call[1] as any).name?.includes("HMMWV"),
+      (call) => (call[1] as any).name === "HMMWV",
     );
     expect(vehicleCall).toBeDefined();
-    const name = (vehicleCall![1] as any).name as string;
-    // Crew count shown but no names listed (no <u> title, no <br>)
-    expect(name).toBe("HMMWV <i>(2)</i>");
-    expect(name).not.toContain("AIDriver");
-    expect(name).not.toContain("AIGunner");
+    const state = vehicleCall![1] as any;
+    expect(state.crew).toEqual({ count: 2, names: [] });
 
     dispose();
   });
@@ -557,7 +545,7 @@ describe("useRenderBridge", () => {
 
     // Vehicle has a player crew member → isPlayer should be true
     const vehicleCall = updateSpy.mock.calls.find(
-      (call) => (call[1] as any).name?.includes("HMMWV"),
+      (call) => (call[1] as any).name === "HMMWV",
     );
     expect(vehicleCall).toBeDefined();
     expect((vehicleCall![1] as any).isPlayer).toBe(true);
@@ -590,7 +578,7 @@ describe("useRenderBridge", () => {
     await flush();
 
     const vehicleCall = updateSpy.mock.calls.find(
-      (call) => (call[1] as any).name?.includes("HMMWV"),
+      (call) => (call[1] as any).name === "HMMWV",
     );
     expect(vehicleCall).toBeDefined();
     expect((vehicleCall![1] as any).isPlayer).toBe(false);
@@ -639,7 +627,7 @@ describe("useRenderBridge", () => {
     dispose();
   });
 
-  it("hit flash expires after HIT_FLASH_FRAMES", async () => {
+  it("hit flash only active on the exact hit frame", async () => {
     const { engine, renderer, markerManager } = createTestSetup();
     const updateSpy = vi.spyOn(renderer, "updateEntityMarker");
 
@@ -668,12 +656,8 @@ describe("useRenderBridge", () => {
 
     await flush();
 
-    // Seek to hit frame
+    // Seek to hit frame — hit is active
     engine.seekTo(5);
-    await flush();
-
-    // Still flashing at frame 7 (5 + 3 - 1)
-    engine.seekTo(7);
     await flush();
 
     let victimCalls = updateSpy.mock.calls.filter(
@@ -681,8 +665,8 @@ describe("useRenderBridge", () => {
     );
     expect((victimCalls[victimCalls.length - 1]![1] as any).hit).toBe(true);
 
-    // Expired at frame 8 (5 + 3)
-    engine.seekTo(8);
+    // Next frame — hit is no longer active (canvas layer handles visual duration)
+    engine.seekTo(6);
     await flush();
 
     victimCalls = updateSpy.mock.calls.filter(
@@ -736,7 +720,7 @@ describe("useRenderBridge", () => {
     dispose();
   });
 
-  it("vehicle display name escapes HTML in names", async () => {
+  it("vehicle passes raw names without HTML escaping", async () => {
     const { engine, renderer, markerManager } = createTestSetup();
     const updateSpy = vi.spyOn(renderer, "updateEntityMarker");
 
@@ -761,13 +745,13 @@ describe("useRenderBridge", () => {
     await flush();
 
     const vehicleCall = updateSpy.mock.calls.find(
-      (call) => (call[1] as any).name?.includes("Tank"),
+      (call) => (call[1] as any).name === "Tank & <APC>",
     );
     expect(vehicleCall).toBeDefined();
-    const name = (vehicleCall![1] as any).name as string;
-    expect(name).toContain("Tank &amp; &lt;APC&gt;");
-    expect(name).toContain("&lt;script&gt;");
-    expect(name).not.toContain("<script>");
+    const state = vehicleCall![1] as any;
+    // Raw names passed through — renderer handles escaping
+    expect(state.name).toBe("Tank & <APC>");
+    expect(state.crew.names).toEqual(["<script>alert(1)</script>"]);
 
     dispose();
   });
