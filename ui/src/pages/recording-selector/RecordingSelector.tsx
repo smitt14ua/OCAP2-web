@@ -122,11 +122,12 @@ export function RecordingSelector(): JSX.Element {
   };
 
   // Derived data
-  const uniqueMaps = createMemo(() =>
-    [...new Set(recordings().map((o) => o.worldName))].sort((a, b) =>
-      (worldNames().get(a) ?? a).localeCompare(worldNames().get(b) ?? b)
-    )
-  );
+  const uniqueMaps = createMemo(() => {
+    const names = worldNames();
+    return [...new Set(recordings().map((o) => o.worldName))].sort((a, b) =>
+      (names.get(a) ?? a).localeCompare(names.get(b) ?? b)
+    );
+  });
   const uniqueTags = createMemo(() => ([...new Set(recordings().map((o) => o.tag).filter(Boolean))] as string[]).sort((a, b) => a.localeCompare(b)));
 
   const hasPlayerData = createMemo(() => recordings().some(r => (r.playerCount ?? 0) > 0));
@@ -446,7 +447,7 @@ export function RecordingSelector(): JSX.Element {
             {/* Column Headers */}
             <div class={styles.tableHeader} style={{ "grid-template-columns": gridColumns() }}>
               <SortHeader label={t("recording")} sortKey="name" currentSort={sortBy()} currentDir={sortDir()} onSort={handleSort} />
-              <SortHeader label={t("data")} sortKey="date" currentSort={sortBy()} currentDir={sortDir()} onSort={handleSort} />
+              <SortHeader label={t("date")} sortKey="date" currentSort={sortBy()} currentDir={sortDir()} onSort={handleSort} />
               <SortHeader label={t("durability")} sortKey="duration" currentSort={sortBy()} currentDir={sortDir()} onSort={handleSort} />
               <Show when={hasPlayerData()}>
                 <span class={styles.colLabel}>{t("players")}</span>
