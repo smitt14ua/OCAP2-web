@@ -635,6 +635,190 @@ func TestDeleteOperation_DBDeleteError(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, rec.Code)
 }
 
+func TestEditOperation_FocusRange(t *testing.T) {
+	hdlr, op := setupAdminTest(t)
+	token, err := hdlr.jwt.Create("")
+	require.NoError(t, err)
+
+	e := echo.New()
+	body := `{"focusStart":50,"focusEnd":420}`
+	req := httptest.NewRequest(http.MethodPatch, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(fmt.Sprintf("%d", op.ID))
+
+	err = hdlr.EditOperation(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	updated, err := hdlr.repoOperation.GetByID(t.Context(), fmt.Sprintf("%d", op.ID))
+	require.NoError(t, err)
+	require.NotNil(t, updated.FocusStart)
+	require.NotNil(t, updated.FocusEnd)
+	assert.Equal(t, int64(50), *updated.FocusStart)
+	assert.Equal(t, int64(420), *updated.FocusEnd)
+
+	var result Operation
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &result))
+	require.NotNil(t, result.FocusStart)
+	assert.Equal(t, int64(50), *result.FocusStart)
+}
+
+func TestEditOperation_ClearFocusRange(t *testing.T) {
+	hdlr, op := setupAdminTest(t)
+	token, err := hdlr.jwt.Create("")
+	require.NoError(t, err)
+	ctx := t.Context()
+
+	// First set a focus range directly in DB
+	start, end := int64(10), int64(100)
+	_, err = hdlr.repoOperation.db.ExecContext(ctx,
+		`UPDATE operations SET focus_start = ?, focus_end = ? WHERE id = ?`,
+		start, end, op.ID)
+	require.NoError(t, err)
+
+	// Clear via API with explicit nulls
+	e := echo.New()
+	body := `{"focusStart":null,"focusEnd":null}`
+	req := httptest.NewRequest(http.MethodPatch, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(fmt.Sprintf("%d", op.ID))
+
+	err = hdlr.EditOperation(c)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	updated, err := hdlr.repoOperation.GetByID(ctx, fmt.Sprintf("%d", op.ID))
+	require.NoError(t, err)
+	assert.Nil(t, updated.FocusStart)
+	assert.Nil(t, updated.FocusEnd)
+}
+
+func TestEditOperation_PreservesFocusRange(t *testing.T) {
+	hdlr, op := setupAdminTest(t)
+	token, err := hdlr.jwt.Create("")
+	require.NoError(t, err)
+	ctx := t.Context()
+
+	// Set focus range directly
+	start, end := int64(10), int64(100)
+	_, err = hdlr.repoOperation.db.ExecContext(ctx,
+		`UPDATE operations SET focus_start = ?, focus_end = ? WHERE id = ?`,
+		start, end, op.ID)
+	require.NoError(t, err)
+
+	// Edit only missionName — focus range should be preserved
+	e := echo.New()
+	body := `{"missionName":"Renamed"}`
+	req := httptest.NewRequest(http.MethodPatch, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(fmt.Sprintf("%d", op.ID))
+
+	err = hdlr.EditOperation(c)
+	require.NoError(t, err)
+
+	updated, err := hdlr.repoOperation.GetByID(ctx, fmt.Sprintf("%d", op.ID))
+	require.NoError(t, err)
+	assert.Equal(t, "Renamed", updated.MissionName)
+	require.NotNil(t, updated.FocusStart)
+	assert.Equal(t, int64(10), *updated.FocusStart)
+	assert.Equal(t, int64(100), *updated.FocusEnd)
+}
+
+func TestEditOperation_InvertedFocusRange(t *testing.T) {
+	hdlr, op := setupAdminTest(t)
+	token, err := hdlr.jwt.Create("")
+	require.NoError(t, err)
+
+	e := echo.New()
+	// focusStart > focusEnd — this is an invalid range
+	body := `{"focusStart":420,"focusEnd":50}`
+	req := httptest.NewRequest(http.MethodPatch, "/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(fmt.Sprintf("%d", op.ID))
+
+	err = hdlr.EditOperation(c)
+	assert.Error(t, err, "inverted focus range should be rejected")
+}
+
+func TestEditOperation_PartialFocusRange(t *testing.T) {
+	hdlr, op := setupAdminTest(t)
+	token, err := hdlr.jwt.Create("")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"focusStart without focusEnd", `{"focusStart":50}`},
+		{"focusEnd without focusStart", `{"focusEnd":100}`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := echo.New()
+			req := httptest.NewRequest(http.MethodPatch, "/", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+token)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("id")
+			c.SetParamValues(fmt.Sprintf("%d", op.ID))
+
+			err := hdlr.EditOperation(c)
+			assert.Error(t, err, "partial focus range should be rejected: %s", tc.name)
+		})
+	}
+}
+
+func TestEditOperation_InvalidFieldTypes(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"invalid missionName type", `{"missionName": 123}`},
+		{"invalid tag type", `{"tag": []}`},
+		{"invalid date type", `{"date": {"nested": true}}`},
+		{"invalid focusStart type", `{"focusStart": "not-a-number"}`},
+		{"invalid focusEnd type", `{"focusEnd": ["array"]}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hdlr, op := setupAdminTest(t)
+			token, err := hdlr.jwt.Create("")
+			require.NoError(t, err)
+
+			e := echo.New()
+			req := httptest.NewRequest(http.MethodPatch, "/", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+token)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("id")
+			c.SetParamValues(fmt.Sprintf("%d", op.ID))
+
+			err = hdlr.EditOperation(c)
+			assert.Error(t, err, "expected error for %s", tt.name)
+		})
+	}
+}
+
 func TestDeleteOperation_ReadOnlyFileCleanup(t *testing.T) {
 	dir := t.TempDir()
 	dataDir := filepath.Join(dir, "data")

@@ -12,6 +12,7 @@ import {
   StepForwardIcon,
   SkipToKillBackIcon,
   SkipToKillIcon,
+  ScissorsIcon,
 } from "../../../components/Icons";
 import {
   stepBack,
@@ -20,12 +21,29 @@ import {
   seekToNextKill,
 } from "../shortcuts";
 import { TimelineScrubber } from "./TimelineScrubber";
+import type { FocusRange } from "./FocusToolbar";
+import { FocusToolbar } from "./FocusToolbar";
 import styles from "./BottomBar.module.css";
 
 export interface BottomBarProps {
   panelOpen: Accessor<boolean>;
   onTogglePanel: () => void;
   timeMode: Accessor<TimeMode>;
+  // Focus range
+  focusRange: Accessor<FocusRange | null>;
+  editingFocus: Accessor<boolean>;
+  focusDraft: Accessor<FocusRange | null>;
+  onDraftChange: (draft: FocusRange) => void;
+  showFullTimeline: Accessor<boolean>;
+  onToggleFullTimeline: () => void;
+  constrainToFocus: Accessor<boolean>;
+  isAdmin: Accessor<boolean>;
+  onStartFocusEdit: () => void;
+  onSetIn: () => void;
+  onSetOut: () => void;
+  onClearFocus: () => void;
+  onCancelFocus: () => void;
+  onSaveFocus: () => void;
 }
 
 const SPEEDS = [1, 2, 5, 10, 20, 60];
@@ -44,30 +62,46 @@ export function BottomBar(props: BottomBarProps): JSX.Element {
     <div class={styles.bottomBar}>
       {/* Row 1: Timeline */}
       <div class={styles.timelineRow}>
-        <TimelineScrubber />
+        <TimelineScrubber
+          focusRange={props.showFullTimeline() ? (() => null) : props.focusRange}
+          editingFocus={props.editingFocus}
+          focusDraft={props.focusDraft}
+          onDraftChange={props.onDraftChange}
+          constrainToFocus={props.constrainToFocus}
+        />
       </div>
+
+      {/* Focus Toolbar (edit mode) */}
+      <Show when={props.editingFocus()}>
+        <FocusToolbar
+          draft={props.focusDraft}
+          onSetIn={props.onSetIn}
+          onSetOut={props.onSetOut}
+          onClear={props.onClearFocus}
+          onCancel={props.onCancelFocus}
+          onSave={props.onSaveFocus}
+        />
+      </Show>
 
       {/* Row 2: Controls */}
       <div class={styles.controlsRow}>
-        {/* Left: Panel toggle + time display */}
+        {/* Left: Time display */}
         <div class={styles.controlsLeft}>
-          <button
-            class={styles.panelToggle}
-            classList={{
-              [styles.panelToggleActive]: props.panelOpen(),
-            }}
-            onClick={() => props.onTogglePanel()}
-          >
-            <MapIcon size={12} />
-            {t("panel")}
-            <kbd>E</kbd>
-          </button>
-
           <span class={styles.timeDisplay}>
             {currentTime()}
             <span class={styles.timeSeparator}>/</span>
             <span class={styles.timeDimmed}>{totalTime()}</span>
           </span>
+
+          <Show when={props.focusRange() && !props.editingFocus()}>
+            <button
+              class={styles.focusToggle}
+              onClick={props.onToggleFullTimeline}
+              title={props.showFullTimeline() ? "Show focused range" : "Show full recording"}
+            >
+              {props.showFullTimeline() ? "FULL" : "FOCUS"}
+            </button>
+          </Show>
         </div>
 
         {/* Center: Transport controls */}
@@ -118,7 +152,7 @@ export function BottomBar(props: BottomBarProps): JSX.Element {
           </button>
         </div>
 
-        {/* Right: Speed strip */}
+        {/* Right: Speed strip + Focus button */}
         <div class={styles.controlsRight}>
           <div class={styles.speedStrip}>
             <For each={SPEEDS}>
@@ -133,6 +167,29 @@ export function BottomBar(props: BottomBarProps): JSX.Element {
               )}
             </For>
           </div>
+
+          <Show when={props.isAdmin() && !props.editingFocus()}>
+            <button
+              class={styles.focusBtn}
+              classList={{ [styles.focusBtnActive]: !!props.focusRange() }}
+              onClick={props.onStartFocusEdit}
+              title="Edit focus range"
+            >
+              <ScissorsIcon size={12} /> Focus
+            </button>
+          </Show>
+
+          <button
+            class={styles.panelToggle}
+            classList={{
+              [styles.panelToggleActive]: props.panelOpen(),
+            }}
+            onClick={() => props.onTogglePanel()}
+          >
+            <MapIcon size={12} />
+            {t("panel")}
+            <kbd>E</kbd>
+          </button>
         </div>
       </div>
     </div>

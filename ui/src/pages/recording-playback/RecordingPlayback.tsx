@@ -1,4 +1,4 @@
-import { onMount, onCleanup, createSignal, createMemo, Show } from "solid-js";
+import { onMount, onCleanup, createSignal, createMemo, createEffect, Show } from "solid-js";
 import type { JSX } from "solid-js";
 import { useParams, useNavigate, useLocation } from "@solidjs/router";
 import type { WorldConfig } from "../../data/types";
@@ -27,6 +27,7 @@ import { CounterDisplay } from "./components/CounterDisplay";
 import { FollowIndicator } from "./components/FollowIndicator";
 import { Hint, showHint, hintMessage, hintVisible } from "./components/Hint";
 import { BlacklistIndicator } from "./components/BlacklistIndicator";
+import type { FocusRange } from "./components/FocusToolbar";
 import {
   registerShortcuts,
   unregisterShortcuts,
@@ -34,6 +35,8 @@ import {
   activePanelTab,
   setActivePanelTab,
   setLeftPanelVisible,
+  setEditingFocusForShortcuts,
+  setFocusShortcutCallbacks,
 } from "./shortcuts";
 import { loadRecording } from "./loadRecording";
 import { useRenderBridge } from "./useRenderBridge";
@@ -70,6 +73,10 @@ export function RecordingPlayback(): JSX.Element {
   const [blacklist, setBlacklist] = createSignal<Set<number>>(new Set());
   const [markerCounts, setMarkerCounts] = createSignal<Map<number, number>>(new Map());
   const [timeMode, setTimeMode] = createSignal<TimeMode>("elapsed");
+  const [focusRange, setFocusRange] = createSignal<FocusRange | null>(null);
+  const [editingFocus, setEditingFocus] = createSignal(false);
+  const [focusDraft, setFocusDraft] = createSignal<FocusRange | null>(null);
+  const [showFullTimeline, setShowFullTimeline] = createSignal(false);
 
   const locState = () => location.state as LocationState | undefined;
 
@@ -107,8 +114,28 @@ export function RecordingPlayback(): JSX.Element {
 
   useRenderBridge(engine, renderer, markerManager);
 
+  // ─── Focus editing callbacks (defined before onMount so shortcuts can reference them) ───
+
+  const setFocusIn = () => {
+    setFocusDraft((d) => d ? { ...d, inFrame: Math.min(engine.currentFrame(), d.outFrame - 1) } : d);
+  };
+
+  const setFocusOut = () => {
+    setFocusDraft((d) => d ? { ...d, outFrame: Math.max(engine.currentFrame(), d.inFrame + 1) } : d);
+  };
+
+  const cancelFocus = () => {
+    setEditingFocus(false);
+    setFocusDraft(null);
+  };
+
   onMount(() => {
     registerShortcuts(engine);
+    setFocusShortcutCallbacks({
+      onSetIn: setFocusIn,
+      onSetOut: setFocusOut,
+      onCancel: cancelFocus,
+    });
 
     const id = decodeURIComponent(params.id);
     void (async () => {
@@ -131,6 +158,12 @@ export function RecordingPlayback(): JSX.Element {
         setRecordingFilename(result.recordingFilename);
         setExtensionVersion(result.extensionVersion);
         setAddonVersion(result.addonVersion);
+
+        // Initialize focus range from recording metadata
+        if (rec.focusStart != null && rec.focusEnd != null) {
+          setFocusRange({ inFrame: rec.focusStart, outFrame: rec.focusEnd });
+          engine.seekTo(rec.focusStart);
+        }
 
         // Fetch marker blacklist (non-fatal)
         try {
@@ -156,7 +189,73 @@ export function RecordingPlayback(): JSX.Element {
     markerManager.clear();
     engine.dispose();
     renderer.dispose();
+    document.documentElement.style.removeProperty("--pb-bottom-height");
   });
+
+  // Sync editing state to shortcuts module + adjust bottom bar height
+  createEffect(() => {
+    const editing = editingFocus();
+    setEditingFocusForShortcuts(editing);
+    document.documentElement.style.setProperty(
+      "--pb-bottom-height",
+      editing ? "130px" : "94px",
+    );
+  });
+
+  // Clamp playback to focus range when constrained (not editing, not full timeline)
+  const focusConstrained = () =>
+    !editingFocus() && !showFullTimeline() && !!focusRange();
+
+  createEffect(() => {
+    if (!focusConstrained()) return;
+    const frame = engine.currentFrame();
+    const range = focusRange();
+    if (!range) return;
+    if (frame >= range.outFrame && engine.isPlaying()) {
+      engine.pause();
+    }
+    const clamped = Math.max(range.inFrame, Math.min(range.outFrame, frame));
+    if (clamped !== frame) {
+      engine.seekTo(clamped);
+    }
+  });
+
+  // ─── Focus editing actions (start / save / clear) ───
+
+  const startFocusEdit = () => {
+    setEditingFocus(true);
+    const current = focusRange();
+    setFocusDraft(current ? { ...current } : { inFrame: 0, outFrame: engine.endFrame() });
+  };
+
+  const saveFocus = async () => {
+    const draft = focusDraft();
+    const rid = recordingId();
+    if (!draft || !rid) return;
+    try {
+      await api.editRecording(rid, { focusStart: draft.inFrame, focusEnd: draft.outFrame });
+      setFocusRange({ ...draft });
+    } catch (e) {
+      console.error("Failed to save focus range:", e);
+      return;
+    }
+    setEditingFocus(false);
+    setFocusDraft(null);
+  };
+
+  const clearFocus = async () => {
+    const rid = recordingId();
+    if (!rid) return;
+    try {
+      await api.editRecording(rid, { focusStart: null, focusEnd: null });
+      setFocusRange(null);
+    } catch (e) {
+      console.error("Failed to clear focus range:", e);
+      return;
+    }
+    setEditingFocus(false);
+    setFocusDraft(null);
+  };
 
   return (
     <EngineProvider engine={engine}>
@@ -188,6 +287,20 @@ export function RecordingPlayback(): JSX.Element {
           panelOpen={leftPanelVisible}
           onTogglePanel={() => setLeftPanelVisible((v) => !v)}
           timeMode={timeMode}
+          focusRange={focusRange}
+          editingFocus={editingFocus}
+          focusDraft={focusDraft}
+          onDraftChange={setFocusDraft}
+          showFullTimeline={showFullTimeline}
+          onToggleFullTimeline={() => setShowFullTimeline((v) => !v)}
+          constrainToFocus={focusConstrained}
+          isAdmin={authenticated}
+          onStartFocusEdit={startFocusEdit}
+          onSetIn={setFocusIn}
+          onSetOut={setFocusOut}
+          onClearFocus={clearFocus}
+          onCancelFocus={cancelFocus}
+          onSaveFocus={saveFocus}
         />
         <MapControls />
         <CounterDisplay />

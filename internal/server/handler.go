@@ -347,6 +347,29 @@ func (h *Handler) StoreOperation(c echo.Context) error {
 		return err
 	}
 
+	if fs := c.FormValue("focusStart"); fs != "" {
+		v, err := strconv.ParseInt(fs, 10, 64)
+		if err != nil {
+			return echo.ErrBadRequest
+		}
+		op.FocusStart = &v
+	}
+	if fe := c.FormValue("focusEnd"); fe != "" {
+		v, err := strconv.ParseInt(fe, 10, 64)
+		if err != nil {
+			return echo.ErrBadRequest
+		}
+		op.FocusEnd = &v
+	}
+
+	// Validate focus range: both must be present or both absent, and start < end
+	if (op.FocusStart == nil) != (op.FocusEnd == nil) {
+		return echo.ErrBadRequest
+	}
+	if op.FocusStart != nil && op.FocusEnd != nil && *op.FocusStart >= *op.FocusEnd {
+		return echo.ErrBadRequest
+	}
+
 	if err = h.repoOperation.Store(ctx, &op); err != nil {
 		return err
 	}

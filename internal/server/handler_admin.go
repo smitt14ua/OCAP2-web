@@ -1,6 +1,8 @@
 package server
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +15,69 @@ type editOperationRequest struct {
 	MissionName string `json:"missionName"`
 	Tag         string `json:"tag"`
 	Date        string `json:"date"`
+
+	// Focus range fields use json.RawMessage to distinguish
+	// "field absent" (don't change) from "field is null" (clear value).
+	// Populated manually from raw JSON; not decoded by struct tags.
+	FocusStart json.RawMessage `json:"-"`
+	FocusEnd   json.RawMessage `json:"-"`
+
+	hasFocusStart bool
+	hasFocusEnd   bool
+}
+
+// parseFocusField parses a nullable int64 from a json.RawMessage that is known to be present.
+// Returns nil for JSON null, or the parsed int64 value.
+func parseFocusField(raw json.RawMessage) (*int64, bool) {
+	if string(raw) == "null" {
+		return nil, true // explicitly null — clear the value
+	}
+	var v int64
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, false
+	}
+	return &v, true
+}
+
+// decodeEditRequest decodes the JSON body into an editOperationRequest,
+// tracking whether focusStart/focusEnd keys were present.
+func decodeEditRequest(c echo.Context) (editOperationRequest, error) {
+	var req editOperationRequest
+
+	// Decode into a raw map to detect key presence
+	var rawMap map[string]json.RawMessage
+	if err := json.NewDecoder(c.Request().Body).Decode(&rawMap); err != nil {
+		return req, err
+	}
+
+	// Decode standard string fields from the raw map
+	if v, ok := rawMap["missionName"]; ok {
+		if err := json.Unmarshal(v, &req.MissionName); err != nil {
+			return req, fmt.Errorf("invalid missionName: %w", err)
+		}
+	}
+	if v, ok := rawMap["tag"]; ok {
+		if err := json.Unmarshal(v, &req.Tag); err != nil {
+			return req, fmt.Errorf("invalid tag: %w", err)
+		}
+	}
+	if v, ok := rawMap["date"]; ok {
+		if err := json.Unmarshal(v, &req.Date); err != nil {
+			return req, fmt.Errorf("invalid date: %w", err)
+		}
+	}
+
+	// Track focus field presence (key exists in JSON, even if value is null)
+	if v, ok := rawMap["focusStart"]; ok {
+		req.FocusStart = v
+		req.hasFocusStart = true
+	}
+	if v, ok := rawMap["focusEnd"]; ok {
+		req.FocusEnd = v
+		req.hasFocusEnd = true
+	}
+
+	return req, nil
 }
 
 // EditOperation updates the editable metadata of an operation.
@@ -22,8 +87,8 @@ func (h *Handler) EditOperation(c echo.Context) error {
 		return echo.ErrBadRequest
 	}
 
-	var req editOperationRequest
-	if err := c.Bind(&req); err != nil {
+	req, err := decodeEditRequest(c)
+	if err != nil {
 		return echo.ErrBadRequest
 	}
 
@@ -43,13 +108,41 @@ func (h *Handler) EditOperation(c echo.Context) error {
 		date = current.Date
 	}
 
-	if err := h.repoOperation.UpdateOperation(c.Request().Context(), id, name, tag, date); err != nil {
+	// Focus range: only update if the field was present in the JSON body
+	focusStart := current.FocusStart
+	focusEnd := current.FocusEnd
+	if req.hasFocusStart {
+		val, ok := parseFocusField(req.FocusStart)
+		if !ok {
+			return echo.ErrBadRequest
+		}
+		focusStart = val
+	}
+	if req.hasFocusEnd {
+		val, ok := parseFocusField(req.FocusEnd)
+		if !ok {
+			return echo.ErrBadRequest
+		}
+		focusEnd = val
+	}
+
+	// Validate focus range: both must be present or both absent, and start < end
+	if (focusStart == nil) != (focusEnd == nil) {
+		return echo.ErrBadRequest
+	}
+	if focusStart != nil && focusEnd != nil && *focusStart >= *focusEnd {
+		return echo.ErrBadRequest
+	}
+
+	if err := h.repoOperation.UpdateOperation(c.Request().Context(), id, name, tag, date, focusStart, focusEnd); err != nil {
 		return err
 	}
 
 	current.MissionName = name
 	current.Tag = tag
 	current.Date = date
+	current.FocusStart = focusStart
+	current.FocusEnd = focusEnd
 
 	return c.JSON(http.StatusOK, current)
 }
