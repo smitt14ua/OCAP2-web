@@ -28,11 +28,14 @@ let killFramesEngine: PlaybackEngine | null = null;
 function getKillFrames(engine: PlaybackEngine): number[] {
   if (killFrames === null || killFramesEngine !== engine) {
     killFramesEngine = engine;
-    killFrames = engine.eventManager
-      .getAll()
-      .filter((e) => e instanceof HitKilledEvent && e.type === "killed")
-      .map((e) => e.frameNum)
-      .sort((a, b) => a - b);
+    const frames: number[] = [];
+    for (const e of engine.eventManager.getAll()) {
+      if (e instanceof HitKilledEvent && e.type === "killed") {
+        frames.push(e.frameNum);
+      }
+    }
+    frames.sort((a, b) => a - b);
+    killFrames = frames;
   }
   return killFrames;
 }
@@ -42,27 +45,44 @@ export function invalidateKillFrames(): void {
   killFrames = null;
 }
 
-/** Seek to the previous kill event before the current frame. */
+/**
+ * Binary search for the first index where `predicate` returns true.
+ * Returns `arr.length` if no element satisfies the predicate.
+ */
+function findFirst(arr: number[], predicate: (el: number) => boolean): number {
+  let low = 0;
+  let high = arr.length;
+  while (low < high) {
+    const mid = low + Math.floor((high - low) / 2);
+    if (predicate(arr[mid])) {
+      high = mid;
+    } else {
+      low = mid + 1;
+    }
+  }
+  return low;
+}
+
+/** Seek to the previous kill event before the current frame (binary search). */
 export function seekToPrevKill(engine: PlaybackEngine): void {
   const frames = getKillFrames(engine);
   const cur = engine.currentFrame();
-  for (let i = frames.length - 1; i >= 0; i--) {
-    if (frames[i] < cur) {
-      engine.seekTo(frames[i]);
-      return;
-    }
+
+  const index = findFirst(frames, (f) => f >= cur);
+  const prevIndex = index - 1;
+  if (prevIndex >= 0) {
+    engine.seekTo(frames[prevIndex]);
   }
 }
 
-/** Seek to the next kill event after the current frame. */
+/** Seek to the next kill event after the current frame (binary search). */
 export function seekToNextKill(engine: PlaybackEngine): void {
   const frames = getKillFrames(engine);
   const cur = engine.currentFrame();
-  for (const f of frames) {
-    if (f > cur) {
-      engine.seekTo(f);
-      return;
-    }
+
+  const index = findFirst(frames, (f) => f > cur);
+  if (index < frames.length) {
+    engine.seekTo(frames[index]);
   }
 }
 
