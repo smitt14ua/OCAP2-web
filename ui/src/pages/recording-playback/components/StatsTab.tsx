@@ -28,6 +28,7 @@ interface LeaderboardEntry {
   side: Side;
   kills: number;
   deaths: number;
+  vehicleKills: number;
 }
 
 export function StatsTab(): JSX.Element {
@@ -59,15 +60,24 @@ export function StatsTab(): JSX.Element {
 
   const leaderboard = createMemo((): LeaderboardEntry[] => {
     const units = engine.entityManager.getUnits();
-    const { kills, deaths } = killDeathCounts();
+    const { kills, deaths, vehicleKills } = killDeathCounts();
     return units
-      .filter((u) => u.isPlayer && ((kills.get(u.id) ?? 0) > 0 || (deaths.get(u.id) ?? 0) > 0))
-      .sort((a, b) => (kills.get(b.id) ?? 0) - (kills.get(a.id) ?? 0))
+      .filter((u) => u.isPlayer && (
+        (kills.get(u.id) ?? 0) > 0 ||
+        (deaths.get(u.id) ?? 0) > 0 ||
+        (vehicleKills.get(u.id) ?? 0) > 0
+      ))
+      .sort((a, b) => {
+        const diff = (kills.get(b.id) ?? 0) - (kills.get(a.id) ?? 0);
+        if (diff !== 0) return diff;
+        return (vehicleKills.get(b.id) ?? 0) - (vehicleKills.get(a.id) ?? 0);
+      })
       .map((u) => ({
         name: u.name || `Unit ${u.id}`,
         side: u.side,
         kills: kills.get(u.id) ?? 0,
         deaths: deaths.get(u.id) ?? 0,
+        vehicleKills: vehicleKills.get(u.id) ?? 0,
       }));
   });
 
@@ -155,6 +165,9 @@ export function StatsTab(): JSX.Element {
                 <span class={styles.leaderboardKills} style={{ color: "var(--text-dimmer)", "font-size": "9px" }}>
                   K
                 </span>
+                <span class={styles.leaderboardVehicleKills} style={{ color: "var(--text-dimmer)", "font-size": "9px" }}>
+                  VK
+                </span>
                 <span class={styles.leaderboardDeaths} style={{ color: "var(--text-dimmer)", "font-size": "9px" }}>
                   D
                 </span>
@@ -173,6 +186,7 @@ export function StatsTab(): JSX.Element {
                       {entry.name}
                     </span>
                     <span class={styles.leaderboardKills}>{entry.kills}</span>
+                    <span class={styles.leaderboardVehicleKills}>{entry.vehicleKills}</span>
                     <span class={styles.leaderboardDeaths}>{entry.deaths}</span>
                   </div>
                 )}
