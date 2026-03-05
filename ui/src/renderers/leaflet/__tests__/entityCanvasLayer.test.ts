@@ -63,6 +63,7 @@ function makeConfig(overrides?: Partial<EntityCanvasConfig>): EntityCanvasConfig
     isMapLibreMode: false,
     nameDisplayMode: () => "all",
     layerVisible: () => true,
+    projectileLayerVisible: () => true,
     worldSize: 30720,
     latLngToArma: (ll) => [ll.lng, ll.lat] as [number, number],
     ...overrides,
@@ -406,6 +407,113 @@ describe("EntityCanvasLayer", () => {
     });
   });
 
+  describe("projectiles", () => {
+    it("adds a projectile at the given position", () => {
+      layer.addProjectile(1, {
+        iconUrl: "http://example.com/grenade.png",
+        iconSize: [35, 35],
+      });
+      const p = (layer as any).projectiles.get(1);
+      expect(p).toBeDefined();
+      expect(p.iconUrl).toBe("http://example.com/grenade.png");
+      expect(p.iconSize).toEqual([35, 35]);
+      expect(p.opacity).toBe(0);
+    });
+
+    it("updates projectile position and opacity", () => {
+      layer.addProjectile(1, {
+        iconUrl: "http://example.com/grenade.png",
+        iconSize: [35, 35],
+      });
+      layer.updateProjectile(1, {
+        position: [500, 600],
+        direction: 45,
+        alpha: 0.5,
+      });
+      const p = (layer as any).projectiles.get(1);
+      expect(p.targetX).toBe(500);
+      expect(p.targetY).toBe(600);
+      expect(p.targetDir).toBe(45);
+      expect(p.opacity).toBe(0.5);
+    });
+
+    it("removes a projectile", () => {
+      layer.addProjectile(1, {
+        iconUrl: "http://example.com/grenade.png",
+        iconSize: [35, 35],
+      });
+      layer.removeProjectile(1);
+      expect((layer as any).projectiles.get(1)).toBeUndefined();
+    });
+
+    it("ignores updates for non-existent projectile", () => {
+      expect(() =>
+        layer.updateProjectile(999, { position: [0, 0], direction: 0, alpha: 1 }),
+      ).not.toThrow();
+    });
+
+    it("ignores remove for non-existent projectile", () => {
+      expect(() => layer.removeProjectile(999)).not.toThrow();
+    });
+
+    it("clears projectiles on dispose", () => {
+      layer.addProjectile(1, {
+        iconUrl: "http://example.com/grenade.png",
+        iconSize: [35, 35],
+      });
+      layer.dispose();
+      expect((layer as any).projectiles.size).toBe(0);
+    });
+
+    it("snaps projectile position when smoothing is off", () => {
+      layer.setSmoothingEnabled(false);
+      layer.addProjectile(1, {
+        iconUrl: "http://example.com/grenade.png",
+        iconSize: [35, 35],
+      });
+      layer.updateProjectile(1, { position: [500, 600], direction: 45, alpha: 1 });
+      const p = (layer as any).projectiles.get(1);
+      expect(p.interpProgress).toBe(1);
+      expect(p.prevX).toBe(500);
+      expect(p.prevY).toBe(600);
+    });
+
+    it("snaps on first update then interpolates subsequent small moves", () => {
+      layer.setSmoothingEnabled(true, 1);
+      layer.addProjectile(1, {
+        iconUrl: "http://example.com/grenade.png",
+        iconSize: [35, 35],
+      });
+
+      // First update — distance from (0,0) is large, snaps
+      layer.updateProjectile(1, { position: [1000, 1000], direction: 45, alpha: 1 });
+      const p = (layer as any).projectiles.get(1);
+      expect(p.interpProgress).toBe(1);
+      expect(p.prevX).toBe(1000);
+      expect(p.prevY).toBe(1000);
+
+      // Second update — small move, interpolates
+      layer.updateProjectile(1, { position: [1005, 1005], direction: 46, alpha: 1 });
+      expect(p.interpProgress).toBe(0);
+      expect(p.targetX).toBe(1005);
+      expect(p.targetY).toBe(1005);
+    });
+
+    it("snaps projectile on teleport (large distance)", () => {
+      layer.setSmoothingEnabled(true, 1);
+      layer.addProjectile(1, {
+        iconUrl: "http://example.com/grenade.png",
+        iconSize: [35, 35],
+      });
+      // Large move — exceeds SKIP_ANIMATION_DISTANCE
+      layer.updateProjectile(1, { position: [99999, 99999], direction: 0, alpha: 1 });
+      const p = (layer as any).projectiles.get(1);
+      expect(p.interpProgress).toBe(1);
+      expect(p.prevX).toBe(99999);
+      expect(p.prevY).toBe(99999);
+    });
+  });
+
   describe("dispose", () => {
     it("cancels animation frame", () => {
       const cancelSpy = vi.spyOn(globalThis, "cancelAnimationFrame");
@@ -541,6 +649,7 @@ describe("EntityCanvasLayer — render paths", () => {
       iconCache: {
         resolveType: (t: string) => t,
         get: () => fakeImg as any,
+        getOrLoad: () => fakeImg as any,
         getSize: () => [24, 24] as [number, number],
         preloadAll: () => Promise.resolve(),
       } as unknown as CanvasIconCache,
@@ -548,6 +657,7 @@ describe("EntityCanvasLayer — render paths", () => {
       isMapLibreMode: false,
       nameDisplayMode: () => "all" as const,
       layerVisible: () => true,
+      projectileLayerVisible: () => true,
       worldSize: 30720,
       latLngToArma: (ll) => [ll.lng, ll.lat] as [number, number],
     };
@@ -576,6 +686,36 @@ describe("EntityCanvasLayer — render paths", () => {
     expect(mockCtx.clearRect).toHaveBeenCalled();
     expect(mockCtx.drawImage).not.toHaveBeenCalled();
     expect(mockCtx.stroke).not.toHaveBeenCalled();
+  });
+
+  it("renders when only projectiles exist (no entities)", () => {
+    layer.addProjectile(1, {
+      iconUrl: "http://example.com/grenade.png",
+      iconSize: [35, 35],
+    });
+    layer.updateProjectile(1, { position: [100, 100], direction: 0, alpha: 1 });
+    render();
+    expect(mockCtx.drawImage).toHaveBeenCalled();
+  });
+
+  it("early returns when entity layer hidden and no projectiles or grid", () => {
+    (layer as any).config.layerVisible = () => false;
+    (layer as any).config.projectileLayerVisible = () => false;
+    layer.addEntity(1, DEFAULT_OPTS);
+    render();
+    expect(mockCtx.drawImage).not.toHaveBeenCalled();
+  });
+
+  it("renders projectiles even when entity layer is hidden", () => {
+    (layer as any).config.layerVisible = () => false;
+    (layer as any).config.projectileLayerVisible = () => true;
+    layer.addProjectile(1, {
+      iconUrl: "http://example.com/grenade.png",
+      iconSize: [35, 35],
+    });
+    layer.updateProjectile(1, { position: [100, 100], direction: 0, alpha: 1 });
+    render();
+    expect(mockCtx.drawImage).toHaveBeenCalled();
   });
 
   it("continues when layer hidden but grid visible", () => {
@@ -820,6 +960,124 @@ describe("EntityCanvasLayer — render paths", () => {
     (layer as any).zoomScale = 2;
     render();
     expect((layer as any).projAx).toBe(prevAx);
+  });
+
+  // --- Projectiles ---
+
+  it("renders projectile icons", () => {
+    layer.addProjectile(1, {
+      iconUrl: "http://example.com/grenade.png",
+      iconSize: [35, 35],
+    });
+    layer.updateProjectile(1, { position: [100, 100], direction: 0, alpha: 1 });
+    render();
+    expect(mockCtx.drawImage).toHaveBeenCalled();
+  });
+
+  it("skips projectiles with opacity 0", () => {
+    layer.addProjectile(1, {
+      iconUrl: "http://example.com/grenade.png",
+      iconSize: [35, 35],
+    });
+    layer.updateProjectile(1, { position: [100, 100], direction: 0, alpha: 0 });
+    render();
+    expect(mockCtx.drawImage).not.toHaveBeenCalled();
+  });
+
+  it("skips projectiles when projectile layer is hidden", () => {
+    (layer as any).config.projectileLayerVisible = () => false;
+    layer.addProjectile(1, {
+      iconUrl: "http://example.com/grenade.png",
+      iconSize: [35, 35],
+    });
+    render();
+    expect(mockCtx.drawImage).not.toHaveBeenCalled();
+  });
+
+  it("advances projectile interpolation progress during render", () => {
+    layer.setSmoothingEnabled(true, 1);
+    layer.addProjectile(1, {
+      iconUrl: "http://example.com/grenade.png",
+      iconSize: [35, 35],
+    });
+    // First update snaps (large distance from origin)
+    layer.updateProjectile(1, { position: [1000, 1000], direction: 0, alpha: 1 });
+    // Second update starts interpolation (small distance)
+    layer.updateProjectile(1, { position: [1005, 1005], direction: 0, alpha: 1 });
+    const p = (layer as any).projectiles.get(1);
+    expect(p.interpProgress).toBe(0);
+
+    // Render advances interpolation
+    render();
+    expect(p.interpProgress).toBeGreaterThan(0);
+  });
+
+  it("uses cached projectile positions during zoom", () => {
+    layer.addProjectile(1, {
+      iconUrl: "http://example.com/grenade.png",
+      iconSize: [35, 35],
+    });
+    layer.updateProjectile(1, { position: [100, 100], direction: 0, alpha: 1 });
+    render(); // Cache positions
+
+    const p = (layer as any).projectiles.get(1);
+    const cachedPx = p.cachedPx;
+    const cachedPy = p.cachedPy;
+
+    // Simulate zoom
+    (layer as any).zooming = true;
+    (layer as any).zoomScale = 2;
+    render();
+
+    // During zoom, cached positions should be used (not recalculated)
+    expect(p.cachedPx).toBe(cachedPx);
+    expect(p.cachedPy).toBe(cachedPy);
+    expect(mockCtx.drawImage).toHaveBeenCalled();
+  });
+
+  it("culls off-screen projectiles", () => {
+    layer.addProjectile(1, {
+      iconUrl: "http://example.com/grenade.png",
+      iconSize: [35, 35],
+    });
+    // Place projectile far off-screen (projection maps to way outside viewport)
+    layer.updateProjectile(1, { position: [-999999, -999999], direction: 0, alpha: 1 });
+    mockCtx.drawImage.mockClear();
+    render();
+    // drawImage is NOT called for entity icons when projectile is culled
+    // (entities may still draw, so check setTransform calls for rotation —
+    // the projectile's rotation setTransform should not appear)
+    // Since no entities exist, drawImage should not be called at all
+    expect(mockCtx.drawImage).not.toHaveBeenCalled();
+  });
+
+  it("skips projectiles whose icon has not loaded yet", () => {
+    // Override getOrLoad to return null (icon loading)
+    (layer as any).config.iconCache.getOrLoad = () => null;
+    layer.addProjectile(1, {
+      iconUrl: "http://example.com/grenade.png",
+      iconSize: [35, 35],
+    });
+    layer.updateProjectile(1, { position: [100, 100], direction: 0, alpha: 1 });
+    render();
+    // No drawImage since icon isn't loaded
+    expect(mockCtx.drawImage).not.toHaveBeenCalled();
+  });
+
+  it("renders projectiles between fire lines and entities", () => {
+    layer.setFireLines([{
+      fromX: 100, fromY: 100, toX: 200, toY: 200,
+      color: "#f00", weight: 2, opacity: 0.8,
+      cachedFromPx: 0, cachedFromPy: 0, cachedToPx: 0, cachedToPy: 0,
+    }]);
+    layer.addProjectile(1, {
+      iconUrl: "http://example.com/grenade.png",
+      iconSize: [35, 35],
+    });
+    layer.addEntity(2, DEFAULT_OPTS);
+    render();
+    expect(mockCtx.stroke).toHaveBeenCalled();
+    expect(mockCtx.drawImage).toHaveBeenCalled();
   });
 
   // --- Snapshot ---
