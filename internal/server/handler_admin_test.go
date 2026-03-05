@@ -323,7 +323,7 @@ func TestAdminFlow_LoginEditDelete(t *testing.T) {
 	setting := Setting{
 		Secret: "test-secret",
 		Data:   dir,
-		Admin:  Admin{SessionTTL: time.Hour},
+		Auth:  Auth{SessionTTL: time.Hour},
 	}
 	jwtMgr := NewJWTManager("test-secret", time.Hour)
 
@@ -356,8 +356,8 @@ func TestAdminFlow_LoginEditDelete(t *testing.T) {
 	client := &http.Client{}
 	opID := fmt.Sprintf("%d", op.ID)
 
-	// Create a JWT directly (simulates successful Steam login)
-	authToken, err := jwtMgr.Create("76561198012345678")
+	// Create a JWT directly (simulates successful Steam login with admin role)
+	authToken, err := jwtMgr.Create("76561198012345678", WithRole("admin"))
 	require.NoError(t, err)
 
 	// Step 1: Check auth status — verify authenticated:true
