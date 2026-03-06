@@ -4,7 +4,7 @@ import type { AliveState, Side } from "../../data/types";
 import type { EntityMarkerOpts, EntityMarkerState, CrewInfo } from "../renderer.types";
 import { closestEquivalentAngle, SKIP_ANIMATION_DISTANCE } from "../../utils/math";
 import { CanvasIconCache, resolveVariant } from "./canvasIcons";
-import { getGridInterval, computeGridLines, formatCoordLabel } from "./gridUtils";
+import { getGridLevels, computeGridLines, formatCoordLabel } from "./gridUtils";
 
 /** Map Side enum to bright hex color for canvas drawing. */
 const SIDE_COLORS: Record<Side, string> = {
@@ -497,86 +497,112 @@ export class EntityCanvasLayer {
   private renderGrid(cs: number): void {
     const ctx = this.ctx;
     const zoom = this.config.getZoom();
-    const interval = getGridInterval(zoom, this.config.isMapLibreMode);
+    const { major, minor } = getGridLevels(zoom, this.config.isMapLibreMode);
     const bounds = this.map.getBounds();
     const sw = this.config.latLngToArma(bounds.getSouthWest());
     const ne = this.config.latLngToArma(bounds.getNorthEast());
+    const ws = this.config.worldSize;
 
+    // Compute bounds snapped to the finest interval
+    const finest = minor ?? major;
     const armaBounds = {
-      minX: Math.max(0, Math.floor(sw[0] / interval) * interval),
-      maxX: Math.min(this.config.worldSize, Math.ceil(ne[0] / interval) * interval),
-      minY: Math.max(0, Math.floor(sw[1] / interval) * interval),
-      maxY: Math.min(this.config.worldSize, Math.ceil(ne[1] / interval) * interval),
+      minX: Math.max(0, Math.floor(sw[0] / finest) * finest),
+      maxX: Math.min(ws, Math.ceil(ne[0] / finest) * finest),
+      minY: Math.max(0, Math.floor(sw[1] / finest) * finest),
+      maxY: Math.min(ws, Math.ceil(ne[1] / finest) * finest),
     };
 
-    const gridLines = computeGridLines(armaBounds, interval);
+    // --- Minor grid (thin, subtle) ---
+    if (minor) {
+      const minorLines = computeGridLines(armaBounds, minor);
+      // Filter out lines that coincide with major grid and pre-compute points
+      const minorXPts: { sx: number; sy: number; ex: number; ey: number }[] = [];
+      for (const x of minorLines.x) {
+        if (x % major === 0) continue;
+        const s = this.map.latLngToContainerPoint(this.config.armaToLatLng([x, armaBounds.minY]));
+        const e = this.map.latLngToContainerPoint(this.config.armaToLatLng([x, armaBounds.maxY]));
+        minorXPts.push({ sx: s.x, sy: s.y, ex: e.x, ey: e.y });
+      }
+      const minorYPts: { sx: number; sy: number; ex: number; ey: number }[] = [];
+      for (const y of minorLines.y) {
+        if (y % major === 0) continue;
+        const s = this.map.latLngToContainerPoint(this.config.armaToLatLng([armaBounds.minX, y]));
+        const e = this.map.latLngToContainerPoint(this.config.armaToLatLng([armaBounds.maxX, y]));
+        minorYPts.push({ sx: s.x, sy: s.y, ex: e.x, ey: e.y });
+      }
 
-    // Double-stroke: dark outline then light line for contrast on any map
+      for (const pass of [
+        { color: "rgba(0,0,0,0.15)", width: 1.5 * cs },
+        { color: "rgba(255,255,255,0.15)", width: 0.5 * cs },
+      ] as const) {
+        ctx.strokeStyle = pass.color;
+        ctx.lineWidth = pass.width;
+        ctx.beginPath();
+        for (const p of minorXPts) { ctx.moveTo(p.sx, p.sy); ctx.lineTo(p.ex, p.ey); }
+        for (const p of minorYPts) { ctx.moveTo(p.sx, p.sy); ctx.lineTo(p.ex, p.ey); }
+        ctx.stroke();
+      }
+    }
+
+    // --- Major grid (thicker, more visible) ---
+    const majorBounds = {
+      minX: Math.max(0, Math.floor(sw[0] / major) * major),
+      maxX: Math.min(ws, Math.ceil(ne[0] / major) * major),
+      minY: Math.max(0, Math.floor(sw[1] / major) * major),
+      maxY: Math.min(ws, Math.ceil(ne[1] / major) * major),
+    };
+    const majorLines = computeGridLines(majorBounds, major);
+
+    // Pre-compute major grid points (reused for stroke passes + labels)
+    const majorXPts: { sx: number; sy: number; ex: number; ey: number; val: number }[] = [];
+    for (const x of majorLines.x) {
+      const s = this.map.latLngToContainerPoint(this.config.armaToLatLng([x, armaBounds.minY]));
+      const e = this.map.latLngToContainerPoint(this.config.armaToLatLng([x, armaBounds.maxY]));
+      majorXPts.push({ sx: s.x, sy: s.y, ex: e.x, ey: e.y, val: x });
+    }
+    const majorYPts: { sx: number; sy: number; ex: number; ey: number; val: number }[] = [];
+    for (const y of majorLines.y) {
+      const s = this.map.latLngToContainerPoint(this.config.armaToLatLng([armaBounds.minX, y]));
+      const e = this.map.latLngToContainerPoint(this.config.armaToLatLng([armaBounds.maxX, y]));
+      majorYPts.push({ sx: s.x, sy: s.y, ex: e.x, ey: e.y, val: y });
+    }
+
     for (const pass of [
-      { color: "rgba(0,0,0,0.3)", width: 2.5 * cs },
-      { color: "rgba(255,255,255,0.4)", width: 1 * cs },
+      { color: "rgba(0,0,0,0.25)", width: 2 * cs },
+      { color: "rgba(255,255,255,0.35)", width: 0.75 * cs },
     ] as const) {
       ctx.strokeStyle = pass.color;
       ctx.lineWidth = pass.width;
       ctx.beginPath();
-
-      for (const x of gridLines.x) {
-        const start = this.map.latLngToContainerPoint(
-          this.config.armaToLatLng([x, armaBounds.minY]),
-        );
-        const end = this.map.latLngToContainerPoint(
-          this.config.armaToLatLng([x, armaBounds.maxY]),
-        );
-        ctx.moveTo(start.x, start.y);
-        ctx.lineTo(end.x, end.y);
-      }
-
-      for (const y of gridLines.y) {
-        const start = this.map.latLngToContainerPoint(
-          this.config.armaToLatLng([armaBounds.minX, y]),
-        );
-        const end = this.map.latLngToContainerPoint(
-          this.config.armaToLatLng([armaBounds.maxX, y]),
-        );
-        ctx.moveTo(start.x, start.y);
-        ctx.lineTo(end.x, end.y);
-      }
-
+      for (const p of majorXPts) { ctx.moveTo(p.sx, p.sy); ctx.lineTo(p.ex, p.ey); }
+      for (const p of majorYPts) { ctx.moveTo(p.sx, p.sy); ctx.lineTo(p.ex, p.ey); }
       ctx.stroke();
     }
 
-    // Labels
+    // --- Labels (major grid only) ---
     const fontSize = Math.round(10 * cs);
     ctx.font = `${fontSize}px sans-serif`;
 
-    // X labels (bottom edge)
     ctx.textBaseline = "top";
     ctx.textAlign = "center";
-    for (const x of gridLines.x) {
-      const pos = this.map.latLngToContainerPoint(
-        this.config.armaToLatLng([x, armaBounds.minY]),
-      );
-      const label = formatCoordLabel(x, interval);
+    for (const p of majorXPts) {
+      const label = formatCoordLabel(p.val, major);
       ctx.strokeStyle = "rgba(0,0,0,0.7)";
       ctx.lineWidth = 3 * cs;
-      ctx.strokeText(label, pos.x, pos.y + 2 * cs);
+      ctx.strokeText(label, p.sx, p.sy + 2 * cs);
       ctx.fillStyle = "rgba(255,255,255,0.9)";
-      ctx.fillText(label, pos.x, pos.y + 2 * cs);
+      ctx.fillText(label, p.sx, p.sy + 2 * cs);
     }
 
-    // Y labels (left edge)
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    for (const y of gridLines.y) {
-      const pos = this.map.latLngToContainerPoint(
-        this.config.armaToLatLng([armaBounds.minX, y]),
-      );
-      const label = formatCoordLabel(y, interval);
+    for (const p of majorYPts) {
+      const label = formatCoordLabel(p.val, major);
       ctx.strokeStyle = "rgba(0,0,0,0.7)";
       ctx.lineWidth = 3 * cs;
-      ctx.strokeText(label, pos.x + 3 * cs, pos.y);
+      ctx.strokeText(label, p.sx + 3 * cs, p.sy);
       ctx.fillStyle = "rgba(255,255,255,0.9)";
-      ctx.fillText(label, pos.x + 3 * cs, pos.y);
+      ctx.fillText(label, p.sx + 3 * cs, p.sy);
     }
   }
 
