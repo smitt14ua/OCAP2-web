@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -86,6 +87,7 @@ func NewRepoOperation(pathDB string) (*RepoOperation, error) {
 // runMigration executes a set of SQL statements atomically within a transaction,
 // then records the new version number.
 func (r *RepoOperation) runMigration(version int, statements ...string) error {
+	slog.Info("running database migration", "version", version)
 	tx, err := r.db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin v%d migration: %w", version, err)
@@ -102,7 +104,11 @@ func (r *RepoOperation) runMigration(version int, statements ...string) error {
 		return fmt.Errorf("v%d set version: %w", version, err)
 	}
 
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	slog.Info("database migration completed", "version", version)
+	return nil
 }
 
 func (r *RepoOperation) migration() (err error) {
@@ -133,6 +139,7 @@ func (r *RepoOperation) migration() (err error) {
 	} else if err != nil {
 		return err
 	}
+	slog.Info("database schema", "currentVersion", version)
 
 	if version < 1 {
 		if err = r.runMigration(1,
@@ -217,6 +224,14 @@ func (r *RepoOperation) migration() (err error) {
 		}
 	}
 
+	if version < 10 {
+		if err = r.runMigration(10,
+			`UPDATE operations SET world_name = LOWER(world_name) WHERE world_name != LOWER(world_name)`,
+		); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -245,6 +260,7 @@ func (r *RepoOperation) GetTypes(ctx context.Context) ([]string, error) {
 }
 
 func (r *RepoOperation) Store(ctx context.Context, operation *Operation) error {
+	operation.WorldName = strings.ToLower(operation.WorldName)
 	storageFormat := operation.StorageFormat
 	if storageFormat == "" {
 		storageFormat = "json"
