@@ -237,7 +237,7 @@ describe("ProtobufDecoder.decodeManifest", () => {
       chunkSize: 100,
       captureDelayMs: 1000,
       chunkCount: 1,
-      events: [{ frameNum: 99, type: "endMission", message: "WEST,Mission Complete" }],
+      events: [{ frameNum: 99, type: "endMission", side: "WEST", message: "Mission Complete" }],
     });
 
     const manifest = decoder.decodeManifest(buffer);
@@ -281,8 +281,8 @@ describe("ProtobufDecoder.decodeManifest", () => {
       captureDelayMs: 1000,
       chunkCount: 1,
       events: [
-        { frameNum: 30, type: "captured", message: "PlayerA,sector", posX: 5000, posY: 6000 },
-        { frameNum: 40, type: "capturedFlag", message: "PlayerB,flag" },
+        { frameNum: 30, type: "captured", objectType: "sector", unitName: "Sector Alpha", side: "WEST", posX: 5000, posY: 6000 },
+        { frameNum: 40, type: "capturedFlag", objectType: "flag", unitName: "PlayerB" },
       ],
     });
 
@@ -292,8 +292,9 @@ describe("ProtobufDecoder.decodeManifest", () => {
     const evt0 = manifest.events[0];
     expect(evt0.type).toBe("captured");
     if (evt0.type === "captured") {
-      expect(evt0.unitName).toBe("PlayerA");
+      expect(evt0.unitName).toBe("Sector Alpha");
       expect(evt0.objectType).toBe("sector");
+      expect(evt0.side).toBe("WEST");
       expect(evt0.position).toEqual([5000, 6000]);
     }
 
@@ -306,7 +307,7 @@ describe("ProtobufDecoder.decodeManifest", () => {
     }
   });
 
-  it("decodes capturedFlag with no objectType defaults to 'flag'", () => {
+  it("decodes capturedFlag with player name only", () => {
     const buffer = encodePb(PbManifest, {
       version: 1,
       worldName: "W",
@@ -316,7 +317,7 @@ describe("ProtobufDecoder.decodeManifest", () => {
       captureDelayMs: 1000,
       chunkCount: 1,
       events: [
-        { frameNum: 30, type: "capturedFlag", message: "PlayerC" },
+        { frameNum: 30, type: "capturedFlag", objectType: "flag", unitName: "PlayerC" },
       ],
     });
 

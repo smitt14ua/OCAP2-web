@@ -23,9 +23,19 @@ function capturedEvent(
   frameNum: number,
   unitName: string,
   objectType: string,
+  side?: string,
   position?: [number, number],
 ): EventDef {
-  return { type: "captured", frameNum, unitName, objectType, position } as EventDef;
+  return { type: "captured", frameNum, unitName, objectType, side, position } as EventDef;
+}
+
+/** Create a contested event definition. */
+function contestedEvent(
+  frameNum: number,
+  unitName: string,
+  objectType: string,
+): EventDef {
+  return { type: "contested", frameNum, unitName, objectType } as EventDef;
 }
 
 /** Create a terminalHack event definition. */
@@ -366,7 +376,7 @@ describe("EventsTab", () => {
   it("renders CapturedEvent with unit name and object type", () => {
     const { engine, renderer } = createTestEngine();
     const entities = [unitDef({ id: 1, name: "Soldier" })];
-    const events = [capturedEvent(0, "CapGuy", "flag")];
+    const events = [capturedEvent(0, "Bravo", "sector")];
     engine.loadRecording(makeManifest(entities, events));
 
     render(() => (
@@ -375,14 +385,51 @@ describe("EventsTab", () => {
       </TestProviders>
     ));
 
-    expect(screen.getByText(/CapGuy/)).toBeTruthy();
-    expect(screen.getByText(/flag/)).toBeTruthy();
+    expect(screen.getByText(/Sector/)).toBeTruthy();
+    expect(screen.getByText(/Bravo/)).toBeTruthy();
+    expect(screen.getByText(/captured/)).toBeTruthy();
+  });
+
+  it("renders CapturedEvent with side color", () => {
+    const { engine, renderer } = createTestEngine();
+    const entities = [unitDef({ id: 1, name: "Soldier" })];
+    const events = [capturedEvent(0, "Alpha", "sector", "WEST")];
+    engine.loadRecording(makeManifest(entities, events));
+
+    render(() => (
+      <TestProviders engine={engine} renderer={renderer}>
+        <EventsTab />
+      </TestProviders>
+    ));
+
+    expect(screen.getByText(/Sector/)).toBeTruthy();
+    expect(screen.getByText(/Alpha/)).toBeTruthy();
+    expect(screen.getByText(/captured/)).toBeTruthy();
+    expect(screen.getByText("(WEST)")).toBeTruthy();
+  });
+
+  it("renders contested sector event without side", () => {
+    const { engine, renderer } = createTestEngine();
+    const entities = [unitDef({ id: 1, name: "Soldier" })];
+    const events = [contestedEvent(0, "Bravo", "sector")];
+    engine.loadRecording(makeManifest(entities, events));
+
+    render(() => (
+      <TestProviders engine={engine} renderer={renderer}>
+        <EventsTab />
+      </TestProviders>
+    ));
+
+    expect(screen.getByText(/Sector/)).toBeTruthy();
+    expect(screen.getByText(/Bravo/)).toBeTruthy();
+    expect(screen.getByText(/contested/)).toBeTruthy();
+    expect(screen.queryByText(/WEST|EAST|GUER|CIV/)).toBeNull();
   });
 
   it("clicking a CapturedEvent with position pans the map", () => {
     const { engine, renderer } = createTestEngine();
     const entities = [unitDef({ id: 1, name: "Soldier" })];
-    const events = [capturedEvent(0, "CapGuy", "flag", [5000, 6000])];
+    const events = [capturedEvent(0, "CapGuy", "flag", undefined, [5000, 6000])];
     engine.loadRecording(makeManifest(entities, events));
 
     const panSpy = vi.spyOn(engine, "panToPosition");
