@@ -21,7 +21,7 @@
     },
     "config": {
         "files": "{}",
-        "startup": "{\"done\":\"http server started on\"}",
+        "startup": "{\"done\":\"Server running\"}",
         "logs": "{}",
         "stop": "^C"
     },
