@@ -4,6 +4,7 @@ import type { ToolSet, HealthCheck, MapInfo, JobInfo } from "../pages/map-manage
 // ─── Response types for endpoints not covered in types.ts ───
 
 export interface CustomizeConfig {
+  enabled?: boolean;
   websiteURL?: string;
   websiteLogo?: string;
   websiteLogoSize?: string;
@@ -181,9 +182,6 @@ export class ApiClient {
     const response = await fetch(`${this.baseUrl}/api/v1/customize`, {
       cache: "no-cache",
     });
-    if (response.status === 204) {
-      return {};
-    }
     if (!response.ok) {
       throw new ApiError(
         `GET customize failed: ${response.status} ${response.statusText}`,
@@ -565,7 +563,8 @@ export class ApiClient {
 
   getMapToolEventsUrl(): string {
     const token = getAuthToken();
-    return `${this.baseUrl}/api/v1/maptool/events${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+    if (!token) return "";
+    return `${this.baseUrl}/api/v1/maptool/events?token=${encodeURIComponent(token)}`;
   }
 
   // ─── Internal fetch helpers ───

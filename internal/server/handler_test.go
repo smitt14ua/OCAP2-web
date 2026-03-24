@@ -159,7 +159,7 @@ func TestGetCustomize(t *testing.T) {
 		mockCtx := fuego.NewMockContextNoBody()
 		result, err := hdlr.GetCustomize(mockCtx)
 		assert.NoError(t, err)
-		assert.Nil(t, result)
+		assert.False(t, result.Enabled)
 	})
 }
 
@@ -1534,7 +1534,7 @@ func TestGetCustomize_Disabled(t *testing.T) {
 	mockCtx := fuego.NewMockContextNoBody()
 	result, err := hdlr.GetCustomize(mockCtx)
 	assert.NoError(t, err)
-	assert.Nil(t, result)
+	assert.False(t, result.Enabled)
 }
 
 func TestStoreOperation_FilenameStripping(t *testing.T) {
