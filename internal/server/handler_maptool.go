@@ -96,6 +96,11 @@ func (h *Handler) deleteMapToolMap(c ContextNoBody) (any, error) {
 func (h *Handler) importMapToolZip(c ContextNoBody) (maptool.JobInfo, error) {
 	r := c.Request()
 
+	err := r.ParseMultipartForm(1024 << 20) // 1 GB
+	if err != nil {
+		return maptool.JobInfo{}, fuego.BadRequestError{Detail: "failed to parse multipart form"}
+	}
+
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		return maptool.JobInfo{}, fuego.BadRequestError{Detail: "file field is required"}
@@ -257,4 +262,3 @@ func (h *Handler) mapToolEventStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
-
