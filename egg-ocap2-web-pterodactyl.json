@@ -9,7 +9,7 @@
   "description": "OCAP2 Web Server — archives and replays Arma 3 military simulation missions on interactive Leaflet maps. Provides a web interface for browsing operations, streaming playback, and mission upload via API.",
   "features": [],
   "docker_images": {
-    "Pterodactyl Core": "quay.io/pterodactyl/core:generic"
+    "ghcr.io/ocap2/web:full": "ghcr.io/ocap2/web:full"
   },
   "file_denylist": [
     ".git",
