@@ -98,12 +98,12 @@ func (h *Handler) importMapToolZip(c ContextNoBody) (maptool.JobInfo, error) {
 
 	err := r.ParseMultipartForm(1024 << 20) // 1 GB
 	if err != nil {
-		return maptool.JobInfo{}, fuego.BadRequestError{Detail: "failed to parse multipart form"}
+		return maptool.JobInfo{}, fuego.BadRequestError{Err: err, Detail: "failed to parse multipart form"}
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		return maptool.JobInfo{}, fuego.BadRequestError{Detail: "file field is required"}
+		return maptool.JobInfo{}, fuego.BadRequestError{Err: err, Detail: "file field is required"}
 	}
 	defer file.Close()
 
