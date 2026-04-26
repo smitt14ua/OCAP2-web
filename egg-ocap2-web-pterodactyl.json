@@ -42,7 +42,7 @@
       "name": "Listen Address",
       "description": "Address and port the server binds to. Uses the Pterodactyl-allocated port by default.",
       "env_variable": "OCAP_LISTEN",
-      "default_value": "0.0.0.0:{{server.build.default.port}}",
+      "default_value": "0.0.0.0:5000",
       "user_viewable": true,
       "user_editable": false,
       "rules": "required|string|max:20",
@@ -102,30 +102,30 @@
       "name": "Allowed Steam IDs",
       "description": "Comma-separated list of Steam64 IDs authorized for admin login via Steam OpenID. Leave empty to disable Steam admin login.",
       "env_variable": "OCAP_AUTH_ADMINSTEAMIDS",
-      "default_value": "\"\"",
+      "default_value": "",
       "user_viewable": false,
       "user_editable": true,
-      "rules": "string",
+      "rules": "nullable|string",
       "field_type": "text"
     },
     {
       "name": "Steam API Key",
       "description": "Steam Web API key for fetching player display names and avatars. Get one at https://steamcommunity.com/dev/apikey. Optional — without it, the admin badge shows the Steam ID instead of a name.",
       "env_variable": "OCAP_AUTH_STEAMAPIKEY",
-      "default_value": "\"\"",
+      "default_value": "",
       "user_viewable": false,
       "user_editable": true,
-      "rules": "|string",
+      "rules": "nullable|string",
       "field_type": "text"
     },
     {
       "name": "CSS Overrides",
       "description": "JSON object of CSS variable overrides for UI theming.",
       "env_variable": "OCAP_CUSTOMIZE_CSSOVERRIDES",
-      "default_value": "\"\"",
+      "default_value": "",
       "user_viewable": false,
       "user_editable": true,
-      "rules": "string",
+      "rules": "nullable|string",
       "field_type": "text"
     }
   ]
