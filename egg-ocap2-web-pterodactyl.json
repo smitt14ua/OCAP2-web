@@ -16,7 +16,7 @@
   "startup": "/usr/local/ocap/app",
   "config": {
     "files": "{}",
-    "startup": "{}",
+    "startup": "{\"done\":\"Server running\"}",
     "logs": "{}",
     "stop": "^C"
   },
@@ -33,7 +33,7 @@
       "description": "Shared secret for mission uploads and streaming authentication. Must be changed from the default.",
       "env_variable": "OCAP_SECRET",
       "default_value": "change-me",
-      "user_viewable": false,
+      "user_viewable": true,
       "user_editable": true,
       "rules": "required|string|max:20",
       "field_type": "text"
@@ -44,7 +44,7 @@
       "env_variable": "OCAP_LISTEN",
       "default_value": "0.0.0.0:5000",
       "user_viewable": true,
-      "user_editable": false,
+      "user_editable": true,
       "rules": "required|string|max:20",
       "field_type": "text"
     },
@@ -54,7 +54,7 @@
       "env_variable": "OCAP_DB",
       "default_value": "/home/container/db/data.db",
       "user_viewable": true,
-      "user_editable": false,
+      "user_editable": true,
       "rules": "required|string",
       "field_type": "text"
     },
@@ -83,7 +83,7 @@
       "description": "Enable background conversion of JSON missions to chunked protobuf format for faster streaming playback.",
       "env_variable": "OCAP_CONVERSION_ENABLED",
       "default_value": "true",
-      "user_viewable": false,
+      "user_viewable": true,
       "user_editable": true,
       "rules": "required|string|in:true,false",
       "field_type": "text"
@@ -93,7 +93,7 @@
       "description": "Enable the WebSocket streaming endpoint for live mission data ingestion from Arma 3.",
       "env_variable": "OCAP_STREAMING_ENABLED",
       "default_value": "false",
-      "user_viewable": false,
+      "user_viewable": true,
       "user_editable": true,
       "rules": "required|string|in:true,false",
       "field_type": "text"
@@ -103,7 +103,7 @@
       "description": "Comma-separated list of Steam64 IDs authorized for admin login via Steam OpenID. Leave empty to disable Steam admin login.",
       "env_variable": "OCAP_AUTH_ADMINSTEAMIDS",
       "default_value": "",
-      "user_viewable": false,
+      "user_viewable": true,
       "user_editable": true,
       "rules": "nullable|string",
       "field_type": "text"
