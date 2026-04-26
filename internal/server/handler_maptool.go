@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -98,6 +99,7 @@ func (h *Handler) importMapToolZip(c ContextNoBody) (maptool.JobInfo, error) {
 
 	err := r.ParseMultipartForm(1024 << 20) // 1 GB
 	if err != nil {
+		slog.Warn("failed to parse multipart form", "error", err)
 		return maptool.JobInfo{}, fuego.BadRequestError{Err: err, Detail: "failed to parse multipart form"}
 	}
 
