@@ -23,7 +23,7 @@
   "scripts": {
     "installation": {
       "script": "#!/bin/ash\nset -eu\n\n## Create persistent data directories\nmkdir -p /mnt/server/data /mnt/server/db /mnt/server/maps\n\n## Fix ownership so the container user (UID 999) can write to them.\n## See https://github.com/pelican-dev/panel/issues/2098\nchown -R 999:999 /mnt/server\n\necho \"Installation complete\"",
-      "container": "alpine:3.4",
+      "container": "alpine:3.23",
       "entrypoint": "ash"
     }
   },
