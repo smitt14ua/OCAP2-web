@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - mirror
+      - mirror-dev
     tags:
       - "v*.*.*"
 
@@ -41,7 +42,7 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: |
-            ghcr.io/${{ github.repository_owner }}/web
+            ghcr.io/${{ github.repository }}
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
@@ -69,7 +70,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/web,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -109,7 +110,7 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: |
-            ghcr.io/${{ github.repository_owner }}/web
+            ghcr.io/${{ github.repository }}
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
@@ -129,11 +130,11 @@ jobs:
         working-directory: /tmp/digests
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/web@sha256:%s ' *)
+            $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' *)
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/web:${{ steps.meta.outputs.version }}
+          docker buildx imagetools inspect ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
 
   docker-full:
     strategy:
@@ -164,7 +165,7 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: |
-            ghcr.io/${{ github.repository_owner }}/web
+            ghcr.io/${{ github.repository }}
           tags: |
             type=ref,event=branch,suffix=-full
             type=semver,pattern={{version}},suffix=-full
@@ -193,7 +194,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=full-${{ matrix.platform }}
           cache-to: type=gha,mode=max,scope=full-${{ matrix.platform }}
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/web,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -233,7 +234,7 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: |
-            ghcr.io/${{ github.repository_owner }}/web
+            ghcr.io/${{ github.repository }}
           tags: |
             type=ref,event=branch,suffix=-full
             type=semver,pattern={{version}},suffix=-full
@@ -253,11 +254,11 @@ jobs:
         working-directory: /tmp/digests
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/web@sha256:%s ' *)
+            $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' *)
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/web:${{ steps.meta.outputs.version }}
+          docker buildx imagetools inspect ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
 
   release-binaries:
     runs-on: ubuntu-latest
@@ -318,7 +319,7 @@ jobs:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
         run: |
-          go build -ldflags "-X github.com/OCAP2/web/internal/server.BuildVersion=${{ github.ref_name }} -X github.com/OCAP2/web/internal/server.BuildDate=$(date -u +'%Y-%m-%dT%H:%M:%SZ') -X github.com/OCAP2/web/internal/server.BuildCommit=$GITHUB_SHA" -o ${{ matrix.binary }} ./cmd/ocap-webserver
+          go build -ldflags "-X github.com/${{ github.repository }}/internal/server.BuildVersion=${{ github.ref_name }} -X github.com/${{ github.repository }}/internal/server.BuildDate=$(date -u +'%Y-%m-%dT%H:%M:%SZ') -X github.com/${{ github.repository }}/internal/server.BuildCommit=$GITHUB_SHA" -o ${{ matrix.binary }} ./cmd/ocap-webserver
 
       - name: Create release archive
         run: |
