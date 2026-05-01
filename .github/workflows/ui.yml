@@ -3,7 +3,7 @@ name: UI
 on:
   push:
     branches:
-      - main
+      - mirror
     paths:
       - "ui/**"
       - ".github/workflows/ui.yml"
