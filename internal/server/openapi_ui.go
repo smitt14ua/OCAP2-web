@@ -8,7 +8,7 @@ import (
 // OpenAPIUIHandler returns an http.Handler that serves Scalar API reference
 // with native dark mode. The specURL from fuego is absolute (e.g. "/swagger/openapi.json")
 // but we use a relative URL so it resolves correctly behind a reverse proxy path prefix.
-func OpenAPIUIHandler(_ string) http.Handler {
+func OpenAPIUIHandler(openapiPath string) http.Handler {
 	const page = `<!doctype html>
 <html lang="en">
 <head>
@@ -17,7 +17,7 @@ func OpenAPIUIHandler(_ string) http.Handler {
 	<title>OCAP2 Web API</title>
 </head>
 <body>
-	<script id="api-reference" data-url="/swagger/openapi.json" data-configuration='{"darkMode":true,"showDeveloperTools":"never"}'></script>
+	<script id="api-reference" data-url="openapi.json" data-configuration='{"darkMode":true,"showDeveloperTools":"never"}'></script>
 	<script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
 </body>
 </html>`
