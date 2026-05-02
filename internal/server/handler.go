@@ -3,13 +3,13 @@ package server
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log/slog"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,6 +23,7 @@ import (
 	"github.com/OCAP2/web/internal/maptool"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-fuego/fuego"
+	"github.com/go-fuego/fuego/option"
 	"github.com/yohcop/openid-go"
 )
 
@@ -59,8 +60,8 @@ type Handler struct {
 	repoAmmo          *RepoAmmo
 	setting           Setting
 	jwt               *JWTManager
-	conversionTrigger ConversionTrigger  // optional, nil if conversion disabled
-	staticFS          fs.FS              // optional, nil disables static file serving
+	conversionTrigger ConversionTrigger   // optional, nil if conversion disabled
+	staticFS          fs.FS               // optional, nil disables static file serving
 	maptoolMgr        *maptool.JobManager // optional, nil if maptool disabled
 	maptoolCfg        *maptoolConfig      // optional, nil if maptool disabled
 	openIDVerifier    openIDVerifier
@@ -144,7 +145,12 @@ func NewHandler(
 	fuego.Get(g, "/api/version", hdlr.GetVersion, fuego.OptionTags("Health"))
 
 	// Recordings (public read)
-	fuego.Get(g, "/api/v1/operations", hdlr.GetOperations, fuego.OptionTags("Recordings"))
+	fuego.Get(g, "/api/v1/operations", hdlr.GetOperations, fuego.OptionTags("Recordings"),
+		option.Query("name", "Return only records matching the specified name (case-insensitive)"),
+		option.Query("older", "Return only records created before the specified date (YYYY-MM-DD)"),
+		option.Query("newer", "Return only records created after the specified date (YYYY-MM-DD)"),
+		option.Query("tag", "Return only records matching the specified tag (case-insensitive)"),
+	)
 	fuego.Get(g, "/api/v1/operations/{id}", hdlr.GetOperation, fuego.OptionTags("Recordings"))
 	fuego.Get(g, "/api/v1/operations/{id}/marker-blacklist", hdlr.GetMarkerBlacklist, fuego.OptionTags("Recordings"))
 	fuego.PostStd(g, "/api/v1/operations/add", hdlr.StoreOperation, fuego.OptionTags("Recordings"))
