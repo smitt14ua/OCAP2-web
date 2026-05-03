@@ -135,11 +135,6 @@ func NewSetting() (setting Setting, err error) {
 		return
 	}
 
-	// Viper doesn't split comma-separated env var strings into slices,
-	// so a value like "id1,id2" ends up as ["id1,id2"]. Expand it.
-	setting.Auth.AdminSteamIDs = splitCSV(setting.Auth.AdminSteamIDs)
-	setting.CORS.AllowedOrigins = splitCSV(setting.CORS.AllowedOrigins)
-
 	// Viper can't unmarshal a JSON string env var into map[string]string,
 	// so parse OCAP_CUSTOMIZE_CSSOVERRIDES manually if set. Env var takes
 	// precedence over config file.
@@ -166,18 +161,4 @@ func NewSetting() (setting Setting, err error) {
 	}
 
 	return
-}
-
-// splitCSV expands a []string where one element may contain comma-separated
-// values (from an env var) into individual trimmed entries.
-func splitCSV(in []string) []string {
-	var out []string
-	for _, s := range in {
-		for _, part := range strings.Split(s, ",") {
-			if v := strings.TrimSpace(part); v != "" {
-				out = append(out, v)
-			}
-		}
-	}
-	return out
 }
