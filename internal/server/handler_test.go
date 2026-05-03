@@ -627,6 +627,50 @@ func TestCacheControl(t *testing.T) {
 	})
 }
 
+func TestCORSMiddleware(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	t.Run("sets CORS headers on GET", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/operations", nil)
+		rec := httptest.NewRecorder()
+		corsMiddleware(inner).ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"))
+		assert.Contains(t, rec.Header().Get("Access-Control-Allow-Methods"), "GET")
+		assert.Contains(t, rec.Header().Get("Access-Control-Allow-Headers"), "Authorization")
+	})
+
+	t.Run("preflight OPTIONS returns 204 and does not call inner handler", func(t *testing.T) {
+		called := false
+		guarded := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusOK)
+		})
+
+		req := httptest.NewRequest(http.MethodOptions, "/api/v1/operations", nil)
+		req.Header.Set("Origin", "https://example.com")
+		req.Header.Set("Access-Control-Request-Method", "GET")
+		rec := httptest.NewRecorder()
+		corsMiddleware(guarded).ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusNoContent, rec.Code)
+		assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"))
+		assert.False(t, called, "inner handler must not be called for preflight")
+	})
+
+	t.Run("passes through to inner handler for non-OPTIONS", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/operations/add", nil)
+		rec := httptest.NewRecorder()
+		corsMiddleware(inner).ServeHTTP(rec, req)
+
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"))
+	})
+}
+
 func TestWithConversionTrigger(t *testing.T) {
 	trigger := &mockConversionTrigger{}
 

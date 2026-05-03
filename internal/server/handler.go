@@ -3,13 +3,13 @@ package server
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log/slog"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -59,8 +59,8 @@ type Handler struct {
 	repoAmmo          *RepoAmmo
 	setting           Setting
 	jwt               *JWTManager
-	conversionTrigger ConversionTrigger  // optional, nil if conversion disabled
-	staticFS          fs.FS              // optional, nil disables static file serving
+	conversionTrigger ConversionTrigger   // optional, nil if conversion disabled
+	staticFS          fs.FS               // optional, nil disables static file serving
 	maptoolMgr        *maptool.JobManager // optional, nil if maptool disabled
 	maptoolCfg        *maptoolConfig      // optional, nil if maptool disabled
 	openIDVerifier    openIDVerifier
@@ -137,6 +137,8 @@ func NewHandler(
 	prefixURL := strings.TrimRight(hdlr.setting.PrefixURL, "/")
 	g := fuego.Group(s, prefixURL)
 
+	fuego.Use(g, corsMiddleware)
+
 	bearerAuth := openapi3.SecurityRequirement{"bearerAuth": {}}
 
 	// Health & info
@@ -197,6 +199,19 @@ func NewHandler(
 		noCacheMiddleware := hdlr.cacheControl(0)
 		fuego.Handle(g, "/{path...}", noCacheMiddleware(staticHandler))
 	}
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (*Handler) cacheControl(duration time.Duration) func(http.Handler) http.Handler {
