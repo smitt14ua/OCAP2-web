@@ -23,7 +23,6 @@ import (
 	"github.com/OCAP2/web/internal/maptool"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-fuego/fuego"
-	"github.com/go-fuego/fuego/option"
 	"github.com/yohcop/openid-go"
 )
 
@@ -145,12 +144,7 @@ func NewHandler(
 	fuego.Get(g, "/api/version", hdlr.GetVersion, fuego.OptionTags("Health"))
 
 	// Recordings (public read)
-	fuego.Get(g, "/api/v1/operations", hdlr.GetOperations, fuego.OptionTags("Recordings"),
-		option.Query("name", "Return only records matching the specified name (case-insensitive)"),
-		option.Query("older", "Return only records created before the specified date (YYYY-MM-DD)"),
-		option.Query("newer", "Return only records created after the specified date (YYYY-MM-DD)"),
-		option.Query("tag", "Return only records matching the specified tag (case-insensitive)"),
-	)
+	fuego.Get(g, "/api/v1/operations", hdlr.GetOperations, fuego.OptionTags("Recordings"))
 	fuego.Get(g, "/api/v1/operations/{id}", hdlr.GetOperation, fuego.OptionTags("Recordings"))
 	fuego.Get(g, "/api/v1/operations/{id}/marker-blacklist", hdlr.GetMarkerBlacklist, fuego.OptionTags("Recordings"))
 	fuego.PostStd(g, "/api/v1/operations/add", hdlr.StoreOperation, fuego.OptionTags("Recordings"))
@@ -220,7 +214,7 @@ func (*Handler) cacheControl(duration time.Duration) func(http.Handler) http.Han
 	}
 }
 
-func (h *Handler) GetOperations(c ContextNoBody) ([]Operation, error) {
+func (h *Handler) GetOperations(c fuego.Context[any, Filter]) ([]Operation, error) {
 	ctx := c.Context()
 	filter := Filter{
 		Name:  c.QueryParam("name"),
