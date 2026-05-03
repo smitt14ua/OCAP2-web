@@ -665,6 +665,22 @@ func TestCORSMiddleware(t *testing.T) {
 		})
 	})
 
+	t.Run("wildcard OPTIONS without Origin passes through to inner handler", func(t *testing.T) {
+		mw := newCORSMiddleware(nil)
+		called := false
+		guarded := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusOK)
+		})
+
+		req := httptest.NewRequest(http.MethodOptions, "/api/v1/operations", nil)
+		rec := httptest.NewRecorder()
+		mw(guarded).ServeHTTP(rec, req)
+
+		assert.True(t, called, "OPTIONS without Origin header must not be intercepted")
+		assert.Equal(t, http.StatusOK, rec.Code)
+	})
+
 	t.Run("specific origins configured", func(t *testing.T) {
 		mw := newCORSMiddleware([]string{"https://allowed.example.com"})
 
@@ -679,21 +695,37 @@ func TestCORSMiddleware(t *testing.T) {
 			assert.Equal(t, "86400", rec.Header().Get("Access-Control-Max-Age"))
 		})
 
-		t.Run("omits Allow-Origin for non-matching origin", func(t *testing.T) {
+		t.Run("sets Vary even for non-matching origin", func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/operations", nil)
 			req.Header.Set("Origin", "https://evil.com")
 			rec := httptest.NewRecorder()
 			mw(inner).ServeHTTP(rec, req)
 
 			assert.Empty(t, rec.Header().Get("Access-Control-Allow-Origin"))
+			assert.Equal(t, "Origin", rec.Header().Get("Vary"))
 		})
 
-		t.Run("omits Allow-Origin when no Origin header", func(t *testing.T) {
+		t.Run("sets Vary even when no Origin header", func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/operations", nil)
 			rec := httptest.NewRecorder()
 			mw(inner).ServeHTTP(rec, req)
 
 			assert.Empty(t, rec.Header().Get("Access-Control-Allow-Origin"))
+			assert.Equal(t, "Origin", rec.Header().Get("Vary"))
+		})
+
+		t.Run("OPTIONS without Origin passes through to inner handler", func(t *testing.T) {
+			called := false
+			guarded := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				w.WriteHeader(http.StatusOK)
+			})
+
+			req := httptest.NewRequest(http.MethodOptions, "/api/v1/operations", nil)
+			rec := httptest.NewRecorder()
+			mw(guarded).ServeHTTP(rec, req)
+
+			assert.True(t, called, "OPTIONS without Origin header must not be intercepted")
 		})
 	})
 }

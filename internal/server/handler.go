@@ -203,8 +203,8 @@ func NewHandler(
 
 // newCORSMiddleware returns a CORS middleware. When allowedOrigins is empty,
 // all origins are permitted via the wildcard (*). When specific origins are
-// listed, only matching requests receive the Allow-Origin header and a
-// Vary: Origin header is added so caches don't serve the wrong response.
+// listed, Vary: Origin is always set (so caches key on it) and the
+// Allow-Origin header is only set for matching origins.
 func newCORSMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 	originSet := make(map[string]struct{}, len(allowedOrigins))
 	for _, o := range allowedOrigins {
@@ -216,16 +216,18 @@ func newCORSMiddleware(allowedOrigins []string) func(http.Handler) http.Handler 
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if wildcard {
 				w.Header().Set("Access-Control-Allow-Origin", "*")
-			} else if origin := r.Header.Get("Origin"); origin != "" {
-				if _, ok := originSet[origin]; ok {
-					w.Header().Set("Access-Control-Allow-Origin", origin)
-					w.Header().Add("Vary", "Origin")
+			} else {
+				w.Header().Add("Vary", "Origin")
+				if origin := r.Header.Get("Origin"); origin != "" {
+					if _, ok := originSet[origin]; ok {
+						w.Header().Set("Access-Control-Allow-Origin", origin)
+					}
 				}
 			}
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 			w.Header().Set("Access-Control-Max-Age", "86400")
-			if r.Method == http.MethodOptions {
+			if r.Method == http.MethodOptions && r.Header.Get("Origin") != "" {
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
