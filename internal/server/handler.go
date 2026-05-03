@@ -3,13 +3,13 @@ package server
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log/slog"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -59,8 +59,8 @@ type Handler struct {
 	repoAmmo          *RepoAmmo
 	setting           Setting
 	jwt               *JWTManager
-	conversionTrigger ConversionTrigger  // optional, nil if conversion disabled
-	staticFS          fs.FS              // optional, nil disables static file serving
+	conversionTrigger ConversionTrigger   // optional, nil if conversion disabled
+	staticFS          fs.FS               // optional, nil disables static file serving
 	maptoolMgr        *maptool.JobManager // optional, nil if maptool disabled
 	maptoolCfg        *maptoolConfig      // optional, nil if maptool disabled
 	openIDVerifier    openIDVerifier
@@ -214,7 +214,7 @@ func (*Handler) cacheControl(duration time.Duration) func(http.Handler) http.Han
 	}
 }
 
-func (h *Handler) GetOperations(c ContextNoBody) ([]Operation, error) {
+func (h *Handler) GetOperations(c fuego.Context[any, Filter]) ([]Operation, error) {
 	ctx := c.Context()
 	filter := Filter{
 		Name:  c.QueryParam("name"),
