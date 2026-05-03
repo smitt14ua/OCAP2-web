@@ -137,6 +137,8 @@ func NewHandler(
 	prefixURL := strings.TrimRight(hdlr.setting.PrefixURL, "/")
 	g := fuego.Group(s, prefixURL)
 
+	fuego.Use(g, newCORSMiddleware(hdlr.setting.CORS.AllowedOrigins))
+
 	bearerAuth := openapi3.SecurityRequirement{"bearerAuth": {}}
 
 	// Health & info
@@ -196,6 +198,41 @@ func NewHandler(
 		staticHandler := spaFileServer(hdlr.staticFS, prefixURL)
 		noCacheMiddleware := hdlr.cacheControl(0)
 		fuego.Handle(g, "/{path...}", noCacheMiddleware(staticHandler))
+	}
+}
+
+// newCORSMiddleware returns a CORS middleware. When allowedOrigins is empty,
+// all origins are permitted via the wildcard (*). When specific origins are
+// listed, Vary: Origin is always set (so caches key on it) and the
+// Allow-Origin header is only set for matching origins.
+func newCORSMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
+	originSet := make(map[string]struct{}, len(allowedOrigins))
+	for _, o := range allowedOrigins {
+		originSet[o] = struct{}{}
+	}
+	wildcard := len(allowedOrigins) == 0
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if wildcard {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			} else {
+				w.Header().Add("Vary", "Origin")
+				if origin := r.Header.Get("Origin"); origin != "" {
+					if _, ok := originSet[origin]; ok {
+						w.Header().Set("Access-Control-Allow-Origin", origin)
+					}
+				}
+			}
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Max-Age", "86400")
+			if r.Method == http.MethodOptions && r.Header.Get("Origin") != "" {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
 }
 

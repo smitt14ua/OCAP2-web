@@ -627,6 +627,109 @@ func TestCacheControl(t *testing.T) {
 	})
 }
 
+func TestCORSMiddleware(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	t.Run("wildcard (no origins configured)", func(t *testing.T) {
+		mw := newCORSMiddleware(nil)
+
+		t.Run("sets wildcard origin and max-age on GET", func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/operations", nil)
+			rec := httptest.NewRecorder()
+			mw(inner).ServeHTTP(rec, req)
+
+			assert.Equal(t, http.StatusOK, rec.Code)
+			assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"))
+			assert.Contains(t, rec.Header().Get("Access-Control-Allow-Methods"), "GET")
+			assert.Contains(t, rec.Header().Get("Access-Control-Allow-Headers"), "Authorization")
+			assert.Equal(t, "86400", rec.Header().Get("Access-Control-Max-Age"))
+		})
+
+		t.Run("preflight OPTIONS returns 204 without calling inner handler", func(t *testing.T) {
+			called := false
+			guarded := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+			})
+
+			req := httptest.NewRequest(http.MethodOptions, "/api/v1/operations", nil)
+			req.Header.Set("Origin", "https://example.com")
+			req.Header.Set("Access-Control-Request-Method", "GET")
+			rec := httptest.NewRecorder()
+			mw(guarded).ServeHTTP(rec, req)
+
+			assert.Equal(t, http.StatusNoContent, rec.Code)
+			assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"))
+			assert.False(t, called, "inner handler must not be called for preflight")
+		})
+	})
+
+	t.Run("wildcard OPTIONS without Origin passes through to inner handler", func(t *testing.T) {
+		mw := newCORSMiddleware(nil)
+		called := false
+		guarded := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusOK)
+		})
+
+		req := httptest.NewRequest(http.MethodOptions, "/api/v1/operations", nil)
+		rec := httptest.NewRecorder()
+		mw(guarded).ServeHTTP(rec, req)
+
+		assert.True(t, called, "OPTIONS without Origin header must not be intercepted")
+		assert.Equal(t, http.StatusOK, rec.Code)
+	})
+
+	t.Run("specific origins configured", func(t *testing.T) {
+		mw := newCORSMiddleware([]string{"https://allowed.example.com"})
+
+		t.Run("allows matching origin and sets Vary", func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/operations", nil)
+			req.Header.Set("Origin", "https://allowed.example.com")
+			rec := httptest.NewRecorder()
+			mw(inner).ServeHTTP(rec, req)
+
+			assert.Equal(t, "https://allowed.example.com", rec.Header().Get("Access-Control-Allow-Origin"))
+			assert.Equal(t, "Origin", rec.Header().Get("Vary"))
+			assert.Equal(t, "86400", rec.Header().Get("Access-Control-Max-Age"))
+		})
+
+		t.Run("sets Vary even for non-matching origin", func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/operations", nil)
+			req.Header.Set("Origin", "https://evil.com")
+			rec := httptest.NewRecorder()
+			mw(inner).ServeHTTP(rec, req)
+
+			assert.Empty(t, rec.Header().Get("Access-Control-Allow-Origin"))
+			assert.Equal(t, "Origin", rec.Header().Get("Vary"))
+		})
+
+		t.Run("sets Vary even when no Origin header", func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/operations", nil)
+			rec := httptest.NewRecorder()
+			mw(inner).ServeHTTP(rec, req)
+
+			assert.Empty(t, rec.Header().Get("Access-Control-Allow-Origin"))
+			assert.Equal(t, "Origin", rec.Header().Get("Vary"))
+		})
+
+		t.Run("OPTIONS without Origin passes through to inner handler", func(t *testing.T) {
+			called := false
+			guarded := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				w.WriteHeader(http.StatusOK)
+			})
+
+			req := httptest.NewRequest(http.MethodOptions, "/api/v1/operations", nil)
+			rec := httptest.NewRecorder()
+			mw(guarded).ServeHTTP(rec, req)
+
+			assert.True(t, called, "OPTIONS without Origin header must not be intercepted")
+		})
+	})
+}
+
 func TestWithConversionTrigger(t *testing.T) {
 	trigger := &mockConversionTrigger{}
 
