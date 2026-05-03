@@ -28,6 +28,7 @@ type Setting struct {
 	Streaming  Streaming  `json:"streaming" yaml:"streaming"`
 	Auth       Auth       `json:"auth" yaml:"auth"`
 	HttpServer HttpServer `json:"httpServer" yaml:"httpServer"`
+	CORS       CORSConfig `json:"cors" yaml:"cors"`
 }
 
 type Conversion struct {
@@ -59,6 +60,10 @@ type Streaming struct {
 	Enabled      bool          `json:"enabled" yaml:"enabled"`
 	PingInterval time.Duration `json:"pingInterval" yaml:"pingInterval"`
 	PingTimeout  time.Duration `json:"pingTimeout" yaml:"pingTimeout"`
+}
+
+type CORSConfig struct {
+	AllowedOrigins []string `json:"allowedOrigins" yaml:"allowedOrigins"`
 }
 
 type HttpServer struct {
@@ -113,6 +118,7 @@ func NewSetting() (setting Setting, err error) {
 	viper.SetDefault("auth.adminSteamIds", []string{})
 	viper.SetDefault("auth.steamApiKey", "")
 
+	viper.SetDefault("cors.allowedOrigins", []string{})
 	viper.SetDefault("httpServer.readTimeout", "120s")
 	viper.SetDefault("httpServer.readHeaderTimeout", "30s")
 	viper.SetDefault("httpServer.writeTimeout", "120s")
@@ -132,6 +138,7 @@ func NewSetting() (setting Setting, err error) {
 	// Viper doesn't split comma-separated env var strings into slices,
 	// so a value like "id1,id2" ends up as ["id1,id2"]. Expand it.
 	setting.Auth.AdminSteamIDs = splitCSV(setting.Auth.AdminSteamIDs)
+	setting.CORS.AllowedOrigins = splitCSV(setting.CORS.AllowedOrigins)
 
 	// Viper can't unmarshal a JSON string env var into map[string]string,
 	// so parse OCAP_CUSTOMIZE_CSSOVERRIDES manually if set. Env var takes

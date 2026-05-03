@@ -137,7 +137,7 @@ func NewHandler(
 	prefixURL := strings.TrimRight(hdlr.setting.PrefixURL, "/")
 	g := fuego.Group(s, prefixURL)
 
-	fuego.Use(g, corsMiddleware)
+	fuego.Use(g, newCORSMiddleware(hdlr.setting.CORS.AllowedOrigins))
 
 	bearerAuth := openapi3.SecurityRequirement{"bearerAuth": {}}
 
@@ -201,17 +201,37 @@ func NewHandler(
 	}
 }
 
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+// newCORSMiddleware returns a CORS middleware. When allowedOrigins is empty,
+// all origins are permitted via the wildcard (*). When specific origins are
+// listed, only matching requests receive the Allow-Origin header and a
+// Vary: Origin header is added so caches don't serve the wrong response.
+func newCORSMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
+	originSet := make(map[string]struct{}, len(allowedOrigins))
+	for _, o := range allowedOrigins {
+		originSet[o] = struct{}{}
+	}
+	wildcard := len(allowedOrigins) == 0
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if wildcard {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			} else if origin := r.Header.Get("Origin"); origin != "" {
+				if _, ok := originSet[origin]; ok {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					w.Header().Add("Vary", "Origin")
+				}
+			}
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Max-Age", "86400")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func (*Handler) cacheControl(duration time.Duration) func(http.Handler) http.Handler {
