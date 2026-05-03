@@ -3,13 +3,13 @@ package server
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log/slog"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -59,8 +59,8 @@ type Handler struct {
 	repoAmmo          *RepoAmmo
 	setting           Setting
 	jwt               *JWTManager
-	conversionTrigger ConversionTrigger  // optional, nil if conversion disabled
-	staticFS          fs.FS              // optional, nil disables static file serving
+	conversionTrigger ConversionTrigger   // optional, nil if conversion disabled
+	staticFS          fs.FS               // optional, nil disables static file serving
 	maptoolMgr        *maptool.JobManager // optional, nil if maptool disabled
 	maptoolCfg        *maptoolConfig      // optional, nil if maptool disabled
 	openIDVerifier    openIDVerifier
@@ -137,6 +137,8 @@ func NewHandler(
 	prefixURL := strings.TrimRight(hdlr.setting.PrefixURL, "/")
 	g := fuego.Group(s, prefixURL)
 
+	fuego.Use(g, newCORSMiddleware(hdlr.setting.CORS.AllowedOrigins))
+
 	bearerAuth := openapi3.SecurityRequirement{"bearerAuth": {}}
 
 	// Health & info
@@ -199,6 +201,41 @@ func NewHandler(
 	}
 }
 
+// newCORSMiddleware returns a CORS middleware. When allowedOrigins is empty,
+// all origins are permitted via the wildcard (*). When specific origins are
+// listed, Vary: Origin is always set (so caches key on it) and the
+// Allow-Origin header is only set for matching origins.
+func newCORSMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
+	originSet := make(map[string]struct{}, len(allowedOrigins))
+	for _, o := range allowedOrigins {
+		originSet[o] = struct{}{}
+	}
+	wildcard := len(allowedOrigins) == 0
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if wildcard {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			} else {
+				w.Header().Add("Vary", "Origin")
+				if origin := r.Header.Get("Origin"); origin != "" {
+					if _, ok := originSet[origin]; ok {
+						w.Header().Set("Access-Control-Allow-Origin", origin)
+					}
+				}
+			}
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+			w.Header().Set("Access-Control-Max-Age", "86400")
+			if r.Method == http.MethodOptions && r.Header.Get("Origin") != "" {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func (*Handler) cacheControl(duration time.Duration) func(http.Handler) http.Handler {
 	var header string
 	if duration < time.Second {
@@ -214,7 +251,7 @@ func (*Handler) cacheControl(duration time.Duration) func(http.Handler) http.Han
 	}
 }
 
-func (h *Handler) GetOperations(c ContextNoBody) ([]Operation, error) {
+func (h *Handler) GetOperations(c fuego.Context[any, Filter]) ([]Operation, error) {
 	ctx := c.Context()
 	filter := Filter{
 		Name:  c.QueryParam("name"),

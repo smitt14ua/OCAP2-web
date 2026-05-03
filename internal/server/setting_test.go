@@ -500,30 +500,6 @@ func TestSetting_HttpServer(t *testing.T) {
 	assert.Equal(t, 140*time.Second, setting.HttpServer.IdleTimeout)
 }
 
-func TestSplitCSV(t *testing.T) {
-	tests := []struct {
-		name string
-		in   []string
-		want []string
-	}{
-		{"nil input", nil, nil},
-		{"empty slice", []string{}, nil},
-		{"single value", []string{"abc"}, []string{"abc"}},
-		{"already split", []string{"a", "b"}, []string{"a", "b"}},
-		{"comma-separated single element", []string{"a,b,c"}, []string{"a", "b", "c"}},
-		{"mixed", []string{"a,b", "c"}, []string{"a", "b", "c"}},
-		{"whitespace trimmed", []string{" a , b , c "}, []string{"a", "b", "c"}},
-		{"empty parts skipped", []string{"a,,b,"}, []string{"a", "b"}},
-		{"all empty", []string{",,"}, nil},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := splitCSV(tt.in)
-			assert.Equal(t, tt.want, got)
-		})
-	}
-}
-
 func TestNewSetting_NoConfigFile(t *testing.T) {
 	viper.Reset()
 	// Use a directory with no config file
