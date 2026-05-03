@@ -42,5 +42,8 @@
 		"readHeaderTimeout": "30s",
 		"writeTimeout": "120s",
 		"idleTimeout": "120s"
+	},
+	"cors": {
+		"allowedOrigins": []
 	}
 }
