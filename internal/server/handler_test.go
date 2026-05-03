@@ -84,7 +84,7 @@ func TestGetOperations(t *testing.T) {
 	}
 
 	t.Run("get all operations", func(t *testing.T) {
-		mockCtx := fuego.NewMockContextNoBody()
+		mockCtx := fuego.NewMockContext[any](nil, Filter{})
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/operations", nil)
 		mockCtx.SetRequest(req)
 
@@ -94,7 +94,7 @@ func TestGetOperations(t *testing.T) {
 	})
 
 	t.Run("filter by name", func(t *testing.T) {
-		mockCtx := fuego.NewMockContextNoBody()
+		mockCtx := fuego.NewMockContext[any](nil, Filter{})
 		mockCtx.SetQueryParam("name", "Alpha")
 
 		result, err := hdlr.GetOperations(mockCtx)
@@ -104,7 +104,7 @@ func TestGetOperations(t *testing.T) {
 	})
 
 	t.Run("filter by tag", func(t *testing.T) {
-		mockCtx := fuego.NewMockContextNoBody()
+		mockCtx := fuego.NewMockContext[any](nil, Filter{})
 		mockCtx.SetQueryParam("tag", "tvt")
 
 		result, err := hdlr.GetOperations(mockCtx)
@@ -114,7 +114,7 @@ func TestGetOperations(t *testing.T) {
 	})
 
 	t.Run("filter by date range", func(t *testing.T) {
-		mockCtx := fuego.NewMockContextNoBody()
+		mockCtx := fuego.NewMockContext[any](nil, Filter{})
 		mockCtx.SetQueryParam("newer", "2026-01-18")
 		mockCtx.SetQueryParam("older", "2026-01-25")
 
@@ -1500,7 +1500,7 @@ func TestGetOperations_Success(t *testing.T) {
 
 	hdlr := Handler{repoOperation: repo}
 
-	mockCtx := fuego.NewMockContextNoBody()
+	mockCtx := fuego.NewMockContext[any](nil, Filter{})
 	mockCtx.SetQueryParam("name", "Alpha")
 	mockCtx.SetQueryParam("tag", "coop")
 
@@ -1528,7 +1528,7 @@ func TestGetOperations_WithFilters(t *testing.T) {
 
 	hdlr := Handler{repoOperation: repo}
 
-	mockCtx := fuego.NewMockContextNoBody()
+	mockCtx := fuego.NewMockContext[any](nil, Filter{})
 	mockCtx.SetQueryParam("older", "2026-01-15")
 	mockCtx.SetQueryParam("newer", "2026-01-01")
 
@@ -1749,7 +1749,7 @@ func TestGetOperations_BindError(t *testing.T) {
 	// Test the Select error path using closed DB
 	repo.db.Close()
 
-	mockCtx := fuego.NewMockContextNoBody()
+	mockCtx := fuego.NewMockContext[any](nil, Filter{})
 	_, err = h.GetOperations(mockCtx)
 	assert.Error(t, err) // Should return the DB error
 }
@@ -2365,4 +2365,3 @@ func TestStoreOperation_EmptyFile(t *testing.T) {
 	h.StoreOperation(rec, req)
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
-
