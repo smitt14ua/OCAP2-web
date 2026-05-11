@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -47,13 +48,16 @@ type Customize struct {
 	DisableKillCount bool              `json:"disableKillCount" yaml:"disableKillCount"`
 	HeaderTitle      string            `json:"headerTitle" yaml:"headerTitle"`
 	HeaderSubtitle   string            `json:"headerSubtitle" yaml:"headerSubtitle"`
+	PageTitle        string            `json:"pageTitle" yaml:"pageTitle"`
 	CSSOverrides     map[string]string `json:"cssOverrides,omitempty" yaml:"cssOverrides"`
 }
 
 type Auth struct {
+	Mode          string        `json:"mode" yaml:"mode"`
 	SessionTTL    time.Duration `json:"sessionTTL" yaml:"sessionTTL"`
 	AdminSteamIDs []string      `json:"adminSteamIds" yaml:"adminSteamIds"`
 	SteamAPIKey   string        `json:"steamApiKey" yaml:"steamApiKey"`
+	Password      string        `json:"password" yaml:"password"`
 }
 
 type Streaming struct {
@@ -105,6 +109,7 @@ func NewSetting() (setting Setting, err error) {
 	viper.SetDefault("customize.disableKillCount", false)
 	viper.SetDefault("customize.headerTitle", "")
 	viper.SetDefault("customize.headerSubtitle", "")
+	viper.SetDefault("customize.pageTitle", "")
 	viper.SetDefault("conversion.enabled", false)
 	viper.SetDefault("conversion.interval", "5m")
 	viper.SetDefault("conversion.batchSize", 1)
@@ -117,6 +122,8 @@ func NewSetting() (setting Setting, err error) {
 	viper.SetDefault("auth.sessionTTL", "24h")
 	viper.SetDefault("auth.adminSteamIds", []string{})
 	viper.SetDefault("auth.steamApiKey", "")
+	viper.SetDefault("auth.mode", "public")
+	viper.SetDefault("auth.password", "")
 
 	viper.SetDefault("cors.allowedOrigins", []string{})
 	viper.SetDefault("httpServer.readTimeout", "120s")
@@ -132,6 +139,10 @@ func NewSetting() (setting Setting, err error) {
 	}
 
 	if err = viper.Unmarshal(&setting); err != nil {
+		return
+	}
+
+	if err = validateAuthConfig(setting.Auth); err != nil {
 		return
 	}
 
@@ -161,4 +172,18 @@ func NewSetting() (setting Setting, err error) {
 	}
 
 	return
+}
+
+func validateAuthConfig(auth Auth) error {
+	validModes := []string{"public", "password", "steam", "steamAllowlist"}
+	if !slices.Contains(validModes, auth.Mode) {
+		return fmt.Errorf("auth.mode %q is not valid, must be one of: %s", auth.Mode, strings.Join(validModes, ", "))
+	}
+	switch auth.Mode {
+	case "password":
+		if auth.Password == "" {
+			return fmt.Errorf("auth.mode %q requires auth.password to be set", auth.Mode)
+		}
+	}
+	return nil
 }
