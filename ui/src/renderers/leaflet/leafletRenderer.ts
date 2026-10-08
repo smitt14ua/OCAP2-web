@@ -49,6 +49,8 @@ interface InternalMarkerHandle {
   isPlayer: boolean;
   isInVehicle: boolean;
   isVehicle: boolean;
+  /** True when this vehicle has at least one player aboard (used for "players only" labels). */
+  crewHasPlayer: boolean;
 }
 
 interface InternalBriefingHandle {
@@ -133,6 +135,8 @@ export class LeafletRenderer implements MapRenderer {
   private readonly _setNameDisplayMode: Setter<"players" | "all" | "none">;
   private readonly _markerDisplayMode: Accessor<"all" | "noLabels" | "none">;
   private readonly _setMarkerDisplayMode: Setter<"all" | "noLabels" | "none">;
+  private readonly _projectileLabels: Accessor<boolean>;
+  private readonly _setProjectileLabels: Setter<boolean>;
   private readonly _mapStylesSig: Accessor<import("../renderer.types").MapStyleInfo[]>;
   private readonly _setMapStylesSig: Setter<import("../renderer.types").MapStyleInfo[]>;
   private readonly _activeStyleIndexSig: Accessor<number>;
@@ -176,6 +180,10 @@ export class LeafletRenderer implements MapRenderer {
     const [mdm, setMdm] = createSignal<"all" | "noLabels" | "none">("all");
     this._markerDisplayMode = mdm;
     this._setMarkerDisplayMode = setMdm;
+
+    const [pl, setPl] = createSignal<boolean>(true);
+    this._projectileLabels = pl;
+    this._setProjectileLabels = setPl;
 
     const [ms, setMs] = createSignal<import("../renderer.types").MapStyleInfo[]>([]);
     this._mapStylesSig = ms;
@@ -788,6 +796,7 @@ export class LeafletRenderer implements MapRenderer {
       isPlayer: opts.isPlayer,
       isInVehicle: false,
       isVehicle: opts.crew !== undefined,
+      crewHasPlayer: !!opts.crew && opts.crew.names.length > 0,
     };
     (marker as any)._ocapInternal = internal;
     return wrapMarker(internal);
@@ -801,6 +810,7 @@ export class LeafletRenderer implements MapRenderer {
     internal.isPlayer = state.isPlayer;
     internal.isInVehicle = state.isInVehicle;
     internal.isVehicle = state.crew !== undefined;
+    internal.crewHasPlayer = !!state.crew && state.crew.names.length > 0;
 
     // Update position
     const latlng = this.armaToLatLng(state.position);
@@ -846,7 +856,7 @@ export class LeafletRenderer implements MapRenderer {
         } else if (
           this._nameDisplayMode() === "players" &&
           !state.isPlayer &&
-          !internal.isVehicle
+          !internal.crewHasPlayer
         ) {
           display = "none";
         }
@@ -960,10 +970,16 @@ export class LeafletRenderer implements MapRenderer {
     const layerKey = def.layer ?? "briefingMarkers";
     layer.addTo(this.layers[layerKey]);
 
-    // Open popup after adding to map so the DOM element exists
-    if (def.text && layer instanceof L.Marker && this._markerDisplayMode() === "all") {
-      layer.openPopup();
-    }
+    // Open popup after adding to map so the DOM element exists.
+    // Projectile labels are governed independently (see setProjectileLabelsVisible);
+    // all other briefing markers follow markerDisplayMode.
+    const showLabel =
+      def.text &&
+      layer instanceof L.Marker &&
+      (layerKey === "projectileMarkers"
+        ? this._projectileLabels()
+        : this._markerDisplayMode() === "all");
+    if (showLabel) layer.openPopup();
     // Hide text labels when in "noLabels" mode
     if (def.type.includes("Empty") && def.text && this._markerDisplayMode() !== "all") {
       const el = (layer as L.Marker).getElement?.();
@@ -1161,6 +1177,7 @@ export class LeafletRenderer implements MapRenderer {
   get layerVisibility() { return this._layerVisibility; }
   get nameDisplayMode() { return this._nameDisplayMode; }
   get markerDisplayMode() { return this._markerDisplayMode; }
+  get projectileLabelsVisible() { return this._projectileLabels; }
   get mapStyles() { return this._mapStylesSig; }
   get activeStyleIndex() { return this._activeStyleIndexSig; }
 
@@ -1262,7 +1279,7 @@ export class LeafletRenderer implements MapRenderer {
         this._nameDisplayMode() === "players" &&
         internal &&
         !internal.isPlayer &&
-        !internal.isVehicle
+        !internal.crewHasPlayer
       ) {
         display = "none";
       }
@@ -1331,6 +1348,28 @@ export class LeafletRenderer implements MapRenderer {
   private isTextLabelMarker(marker: L.Marker): boolean {
     const icon = marker.options.icon;
     return icon instanceof L.DivIcon && icon.options.className === "marker-text-label";
+  }
+
+  /**
+   * Toggle projectile labels on/off without removing their icons.
+   * When disabled, only the projectile icons remain visible (canvas renderer)
+   * or the popups are closed (DOM/Leaflet renderer).
+   */
+  setProjectileLabelsVisible(visible: boolean): void {
+    this._setProjectileLabels(visible);
+
+    // DOM renderer: open/close popups on projectile markers.
+    // (The canvas renderer reads the signal directly while drawing.)
+    const group = this.layers.projectileMarkers;
+    group.eachLayer((layer) => {
+      if (!(layer instanceof L.Marker)) return;
+      if (!layer.getPopup()) return;
+      if (visible) {
+        layer.openPopup();
+      } else {
+        layer.closePopup();
+      }
+    });
   }
 
   // ==================== Map styles ====================

@@ -121,6 +121,7 @@ export interface EntityCanvasConfig {
   nameDisplayMode: () => "players" | "all" | "none";
   layerVisible: () => boolean;
   projectileLayerVisible: () => boolean;
+  projectileLabelsVisible: () => boolean;
   // Grid
   worldSize: number;
   latLngToArma: (latlng: L.LatLng) => ArmaCoord;
@@ -744,7 +745,7 @@ export class EntityCanvasLayer {
       ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
 
       // Draw label above icon (matching Leaflet popup placement)
-      if (p.text) {
+      if (p.text && this.config.projectileLabelsVisible()) {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.font = fontNormal;
         ctx.textAlign = "center";
@@ -878,11 +879,12 @@ export class EntityCanvasLayer {
       // Vehicle types stay visible in "players" mode so AI vehicles can still be
       // identified without showing every AI infantry name.
       const isVehicle = e.crew !== undefined;
+      const crewHasPlayer = isVehicle && e.crew!.names.length > 0;
       if (
         !hideLabels &&
         nameMode !== "none" &&
         !e.isInVehicle &&
-        (nameMode === "all" || e.isPlayer || isVehicle)
+        (nameMode === "all" || e.isPlayer || (isVehicle && crewHasPlayer))
       ) {
         const [, ih] = e.iconSize;
         const crew = e.crew;
